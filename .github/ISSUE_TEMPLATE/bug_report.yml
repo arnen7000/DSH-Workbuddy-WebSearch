@@ -1,0 +1,126 @@
+# Bug 报告
+# 这份表单会一次性问全定位所需的上下文，省去来回。
+# 请在提交前先跑一遍：node tools/scenarios.mjs "<插件目录>"
+
+name: Bug 报告
+description: 报告可复现的缺陷（安装不上、搜索失败、报错等）
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！请尽量把下面填满——尤其是**错误码**与**dsh 版本**，它们通常能直接定位问题。
+        > ⚠️ 如果是**安全问题**，请勿在此提交，改走 [SECURITY.md](https://github.com/arnen7000/dsh-workbuddy-websearch/blob/main/SECURITY.md)。
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已在 WorkBuddy 桌面端**保持登录**，且桌面 App 能正常联网搜索
+          required: true
+        - label: 我已阅读 README 的「已知边界」一节（未登录时 web_search 会整体报错是**预期行为**）
+          required: true
+        - label: 这不是安全问题（安全问题走 SECURITY.md）
+          required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: 插件版本
+      description: 见 package.json 的 version，或安装目录下 lib 的对应版本
+      placeholder: "0.2.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: dsh-version
+    attributes:
+      label: dsh 版本
+      description: 在 dsh 安装目录执行 `dsh --version`，或看 @deepseek-ai/dsh 的 package.json
+      options:
+        - 0.1.5-rc.2
+        - 0.1.6-alpha.2
+        - 0.1.7-rc.1
+        - 0.2.0-rc.2
+        - 其他（请在下方"补充说明"里写明）
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 操作系统
+      options:
+        - Windows x64
+        - Windows arm64
+        - macOS (实验性支持)
+        - 其他（请补充说明）
+    validations:
+      required: true
+
+  - type: dropdown
+    id: region
+    attributes:
+      label: WorkBuddy 版本
+      description: 国内版走 copilot.tencent.com，国际版走 www.workbuddy.ai
+      options:
+        - 国际版（WorkBuddy AI / www.workbuddy.ai）
+        - 国内版（copilot.tencent.com）
+        - 不确定
+    validations:
+      required: true
+
+  - type: input
+    id: error-code
+    attributes:
+      label: 错误码 / 报错原文
+      description: |
+        插件会返回可归因的错误码，例如 WEB_PROVIDER_CONFIGURED_UNAVAILABLE、
+        WB_SEARCH_BAD_REQUEST、UPSTREAM_ERROR、SESSION_DEAD、EMPTY_RESULT、WEB_ABORTED。
+        请原样粘贴报错文本（**不要粘贴 accessToken**）。
+      placeholder: "WEB_PROVIDER_CONFIGURED_UNAVAILABLE"
+    validations:
+      required: false
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 越具体越好。例如：启动 dsh → 新会话 → 让它搜索"XXX" → 出现……
+      placeholder: |
+        1. 启动 ...
+        2. 在会话里说 ...
+        3. 观察到 ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为 vs 实际行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 诊断信息（可选但很有用）
+      description: |
+        请附上（**注意先脱敏，不要带 token**）：
+        ```bash
+        dsh --profile web --dump-config | grep -A6 "id: web"
+        ```
+        以及场景套件的输出：`node tools/scenarios.mjs "<插件目录>"`
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充说明
+      description: 其他上下文、截图、日志片段（记得脱敏）
+    validations:
+      required: false

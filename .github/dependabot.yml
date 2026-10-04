@@ -1,0 +1,18 @@
+# Dependabot 配置
+#
+# 本插件**刻意保持零运行时依赖**（package.json 无 dependencies），
+# 所以这里只需要盯 GitHub Actions 的版本更新——那是我们唯一的供应链面。
+# 详见 SECURITY.md 的「设计上已经做到的防护」。
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies
+      - github-actions

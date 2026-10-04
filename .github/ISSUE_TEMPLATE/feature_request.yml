@@ -1,0 +1,62 @@
+# 功能请求
+# 提需求前，先看一眼「不管什么」——本插件刻意只接管搜索，不接管抓取。
+
+name: 功能请求
+description: 提出新能力或改进建议
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        欢迎提需求。为帮助判断可行性，请说明**你要解决的场景**，而不只是"想要某个功能"。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你要解决的场景 / 痛点
+      description: 现在是什么样、哪里不顺？例如"我希望搜索能限定时间范围"。
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你期望的方案
+      description: 描述你设想的交互或配置方式。
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 你考虑过的替代方案
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: 这个需求属于哪一块？
+      description: |
+        注意：本插件**只接管 `web_search`（搜索）**，不接管 `web_fetch`（抓取）。
+        如果你的需求是"换掉抓取后端"，那属于 `fetchProvider`，不在本插件范围内。
+      options:
+        - 搜索行为（query / search_mode / 结果解析）
+        - 凭据与登录态（读取、区域切换、续期）
+        - 平台支持（Windows / macOS）
+        - 配置项 / 环境变量
+        - 文档 / 测试体系
+        - 其他（请补充说明）
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: awareness
+    attributes:
+      label: 请确认
+      options:
+        - label: 我知道本插件不接管 web_fetch（抓取），相关需求不在范围内
+          required: false
+        - label: 我愿意在维护者指导下提 PR
+          required: false

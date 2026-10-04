@@ -1,0 +1,17 @@
+# 引导用户先看文档 / 走正确渠道，而不是随手开空白 Issue。
+# 若删除本文件，GitHub 会恢复"空白 Issue"入口。
+
+blank_issues_enabled: false
+
+contact_links:
+  - name: 先读测试与排障文档（TESTING.md）
+    url: https://github.com/arnen7000/dsh-workbuddy-websearch/blob/main/TESTING.md
+    about: 场景地图、两层测试套件、发布回环——很多"是不是坏了"的疑问这里能自答。
+
+  - name: 兼容性与已知边界（COMPATIBILITY.md）
+    url: https://github.com/arnen7000/dsh-workbuddy-websearch/blob/main/COMPATIBILITY.md
+    about: 各 dsh 版本差异、异常路径实测表、两大高危用户场景（含"未登录会整体不可用"）。
+
+  - name: 报告安全漏洞（请勿公开）
+    url: https://github.com/arnen7000/dsh-workbuddy-websearch/blob/main/SECURITY.md
+    about: 凭据相关问题请走私密渠道，不要在公开 Issue 里粘贴 token。

@@ -1,0 +1,8 @@
+# Keep the published npm tarball minimal: only what `files` in package.json
+# declares ships anyway, but this guards against accidental extras.
+tools/
+.git/
+.gitignore
+.github/
+*.tgz
+*.log

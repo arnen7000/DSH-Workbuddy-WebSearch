@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build / pack artifacts
+*.tgz
+dist/
+build/
+out/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.idea/
+.vscode/
+*.code-workspace
+
+# Local scratch (dev-only)
+tmp/
+.tmp/
+*.bak
+*.bak-*
+*.bak.*
+
+# Local-only notes: 不进 GitHub、不进 npm 包。
+# 例如 .local/CREDITS-full.md —— 完整版借鉴报告，留作本地自阅；
+# 对外发布的是精简版 CREDITS.md。
+.local/

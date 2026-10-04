@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# 最小权限：本工作流只需读仓库内容。遵循 GitHub Actions 安全加固建议
+# （默认只读，再按 job 提权），避免 PR 场景下的越权写入。
+permissions:
+  contents: read
+
+jobs:
+  lint-and-load:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate package.json
+        run: node -e "const p=require('./package.json');if(!p.name||!p.version)process.exit(1);console.log(p.name,p.version)"
+      - name: Validate cordis.patch.yml is present & referenced
+        run: |
+          test -f cordis.patch.yml
+          node -e "const p=require('./package.json');if(p.dsh.bundle.patch!=='./cordis.patch.yml')process.exit(1)"
+      - name: Syntax check host entry (ESM)
+        run: node --check lib/index.js
+      - name: Import smoke test
+        run: |
+          node -e "import('./lib/index.js').then(m=>{
+            if(typeof m.apply!=='function') throw new Error('apply missing');
+            if(m.name!=='workbuddy-websearch') throw new Error('unexpected name: '+m.name);
+            if(!Array.isArray(m.inject)) throw new Error('inject missing');
+            console.log('entry OK:', m.name, m.inject);
+          })"
+      - name: Regression suite (offline subset)
+        # 无凭据的 CI 上，T1/T2/T6/T7/T8 等纯逻辑用例仍可跑；T3/T5（凭据/真实搜索）
+        # 会自动降级为 WARN。套件对 FAIL 才非零退出，故 CI 恒通过。
+        run: node tools/regression.mjs "$PWD"
+      - name: Scenario suite (异常路径 / 接管范围)
+        # 全部离线可验（构造输入 / 打桩 fetch），无凭据也能完整跑。
+        run: node tools/scenarios.mjs "$PWD"
+      - name: Docs present (测试体系与规范审计不留空)
+        run: |
+          test -f TESTING.md || { echo "TESTING.md 缺失：测试体系文档必须随版本走"; exit 1; }
+          test -f NORM-COMPLIANCE.md || { echo "NORM-COMPLIANCE.md 缺失：规范审计结论必须随版本走"; exit 1; }
+          grep -q "tools/regression.mjs" TESTING.md || { echo "TESTING.md 未引用回归套件"; exit 1; }
+          grep -q "tools/scenarios.mjs" TESTING.md || { echo "TESTING.md 未引用场景套件"; exit 1; }
+      - name: GitHub metadata self-check (社区档案 / 模板 / 工作流加固)
+        # 校验社区健康文件齐备、Issue Forms 结构合法、Dependabot 配置合法、
+        # 工作流最小权限与关键步骤接线。占位符未替换只 WARN，不阻断。
+        run: node tools/check-github-meta.mjs "$PWD"
+      - name: npm pack (dry run)
+        run: npm pack --dry-run

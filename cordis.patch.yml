@@ -1,0 +1,17 @@
+# dsh-workbuddy-websearch bundle patch.
+
+# 1) 挂载本插件自身（宿主侧一行 row，无 UI 客户端注入）。
+- insert:
+    - id: web-workbuddy-websearch
+      name: dsh-workbuddy-websearch
+
+# 2) 把 web 接缝的搜索 provider 指到本插件。
+#    注意 applyEntryPatches 的语义是「按 id 整行替换 config」，不是合并：
+#    dsh-base 的 web 行只有 searchProvider / fetchProvider 两个键，
+#    这里原样复述 fetchProvider: http，避免静默丢字段。
+#    若用户卸载本插件，bundle patch 随包消失，web 行自动回到 dsh-base 默认。
+- id: web
+  name: '@deepseek-ai/dsh-web'
+  config:
+    searchProvider: workbuddy-agentic
+    fetchProvider: http
