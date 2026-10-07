@@ -133,7 +133,21 @@ try {
   cred = await I.resolveCredential(false, undefined);
   ok("T5.1", `凭据解析成功：{ cred = ${cred.variant?.id}, region = ${cred.variant?.region} }`);
 } catch (e) {
-  bad("T5.1", "凭据解析失败（可能未登录）: " + e.message);
+  // 凭据解析失败在本机可能只是**环境差异**，未必是代码缺陷：
+  //   - 该账号未登录（CI 上必然如此）；
+  //   - 桌面端装在自选盘符/自定义路径 → 探测不到 Electron 二进制（这是插件的既定取舍，
+  //     要用户显式指定 WORKBUDDY_*_ELECTRON_BIN，属正常行为而非 bug）。
+  // 与 T3.1（无 connect → 走内置兜底）同一范式：环境不具备时降级为 WARN，跳过真实搜索，
+  // 否则 CI 会因"机器上没登录"而恒红，违背 TESTING.md「只有 FAIL 才非零退出、CI 恒通过」的约定。
+  // 判据：错误信息里点名了 Electron 二进制不可用 → 环境差异，WARN；其余（解密失败、
+  // 凭据格式损坏等）仍视为 FAIL，避免把真实缺陷一起放过。
+  const msg = e.message || String(e);
+  const envRelated = /electron-binary-unavailable|未能自动定位到它|未能自动定位/i.test(msg);
+  if (envRelated) {
+    warn("T5.1", "本机未定位到国际版 Electron 二进制 → 跳过真实搜索（环境差异，非代码缺陷；可设 WORKBUDDY_AI_ELECTRON_BIN 后复跑）");
+  } else {
+    bad("T5.1", "凭据解析失败（可能未登录）: " + msg);
+  }
 }
 if (cred) {
   try {
@@ -315,8 +329,9 @@ if (decrypt !== undefined) {
 
 // T9.19–T9.20 与「同 id 的另一个搜索插件」撞车时，报错必须是**可操作的**
 //   背景：`ctx.web` 按 provider id 去重，后注册者抛 WEB_DUPLICATE_PROVIDER。
-//   真实场景：dsh-workbuddy-searchserver（前身插件）注册的也是 "workbuddy-agentic"。
 //   裸错误只会让 dsh 打一行 `1 entry did not activate`，用户完全不知道该卸谁。
+//   报错**不得点名任何具体第三方插件**（占用者在运行时不可知，且不应在对外仓库里
+//   出现本机/本组织专属的包名）——必须指引用户自己查出来。
 {
   const makeCtx = (thrower) => ({
     config: undefined,
@@ -335,8 +350,13 @@ if (decrypt !== undefined) {
   }
   check(
     "T9.19",
-    duplicateMsg.includes("dsh-workbuddy-searchserver") && duplicateMsg.includes("remove") && duplicateMsg.includes("bundles"),
-    "provider id 冲突 → 报错点名 dsh-workbuddy-searchserver 并给出卸载步骤",
+    duplicateMsg.includes(I.PROVIDER_ID) && duplicateMsg.includes("remove") && duplicateMsg.includes("bundles"),
+    "provider id 冲突 → 报错带上冲突 id、并给出「查 bundles + remove」的排查步骤",
+  );
+  check(
+    "T9.20",
+    !/\bdsh-workbuddy-(?!websearch\b|connect\b)[a-z0-9-]+/.test(duplicateMsg),
+    "冲突报错不点名任何具体第三方插件（保持通用，不含本机专属包名）",
   );
 
   const unrelated = Object.assign(new Error("boom"), { code: "WEB_SOMETHING_ELSE" });
@@ -346,7 +366,7 @@ if (decrypt !== undefined) {
   } catch (error) {
     passthrough = error;
   }
-  check("T9.20", passthrough === unrelated, "其它注册错误原样透传（不吞、不改写）");
+  check("T9.21", passthrough === unrelated, "其它注册错误原样透传（不吞、不改写）");
 }
 
 // ── T10 平台覆盖 ──

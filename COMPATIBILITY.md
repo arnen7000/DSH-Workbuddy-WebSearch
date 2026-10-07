@@ -1,6 +1,6 @@
 # 适用范围（Compatibility Matrix）
 
-> 版本：dsh-workbuddy-websearch **v0.2.4** · 更新：2026-10
+> 版本：dsh-workbuddy-websearch **v0.2.5** · 更新：2026-10
 > 本文件定义本插件**能装在哪、依赖什么、适配哪些版本**，以及每一条的**实测依据**。
 > 发布前请对照本文确认声明与实测一致。
 
@@ -395,7 +395,7 @@ error: profile "desktop" is managed exclusively by the Electron application
 | Python | 3.12.14（给 dsh 自己用的，见 §5.3） |
 
 **实测结果（等价 profile：复刻桌面版真实 bundle 组合 —— dsh-base + web-app + dshmarket +
-connect + memory-evolve + better-sidebar + cost-meter + genui，把 searchserver 换成本插件）**：
+connect + memory-evolve + better-sidebar + cost-meter + genui，把搜索插件换成本插件）**：
 
 | 验证项 | 结果 |
 |---|---|
@@ -404,23 +404,27 @@ connect + memory-evolve + better-sidebar + cost-meter + genui，把 searchserver
 | 真实搜索（**桌面版自带 Node 24.21.0**，cn） | ✅ `source=builtin`、`variant=workbuddy`、20 sources |
 | 真实搜索（同上，global + 国际版二进制） | ✅ `variant=workbuddy-ai`、`source=desktop-encrypted`、20 sources |
 
-> ⚠️ **与 `dsh-workbuddy-searchserver` 不能共存（桌面版最容易踩的一个坑）**
+> ⚠️ **同一个 provider id 只能有一个插件注册（换搜索插件时最容易踩的坑）**
 >
-> 桌面版的真实 profile 里预装了 `dsh-workbuddy-searchserver`（本插件的前身插件）。
-> 两者注册的是**同一个 provider id `workbuddy-agentic`**，而 `ctx.web` 按 id 去重
-> （`@deepseek-ai/dsh-web` 的 `registerProvider` 会抛 `WEB_DUPLICATE_PROVIDER`）——
-> 于是**后注册的那个直接不激活**。
+> 本插件注册 `workbuddy-agentic`。**任何**注册了同一 id 的插件都会撞车 ——
+> 不限于某个特定包名：本插件的旧版本 / 前身版本、改过 id 的 fork，
+> 或任何自行注册该 id 的第三方插件都算。
 >
-> 实测复现（两个插件同装）：
+> 原因：`ctx.web` 按 id 去重（`@deepseek-ai/dsh-web` 的 `registerProvider`
+> 会抛 `WEB_DUPLICATE_PROVIDER`），于是**后注册的那个直接不激活**。
+>
+> 实测复现（桌面版 profile 里预装的、注册了同一 id 的旧插件 + 本插件同装）：
 > ```
-> [dsh-workbuddy-searchserver] registered "workbuddy-agentic" into ctx.web
+> [<占用同一 id 的插件>] registered "workbuddy-agentic" into ctx.web
 > dsh: warning: 1 entry did not activate
 > web-workbuddy-websearch (dsh-workbuddy-websearch): ...
 > ```
 >
-> **装本插件前必须先卸掉旧插件**，并确认 profile 的 `package.json` 里
-> `dsh.profile.bundles` 已无 `dsh-workbuddy-searchserver`，然后重启 dsh。
-> 从 v0.2.4 起，本插件会把这个裸错误翻译成**点名旧插件 + 给出卸载命令**的指引（回归护栏 T9.19）。
+> **装本插件前必须先卸掉那个占用者**，并确认 profile 的 `package.json` 里
+> `dsh.profile.bundles` 已无该条目，然后重启 dsh。
+> 插件会把这个裸错误翻译成**可操作的排查指引**（回归护栏 T9.19/T9.20）：
+> 运行时拿不到占用者的包名，所以报错指引到「查 `dependencies` 与 `dsh.profile.bundles`
+> → 找出它 → `remove`」，而不是点名某个具体插件。
 
 
 **环境变量 / config 速查**
@@ -587,7 +591,7 @@ if (configuredId !== undefined) {
 
 ## 附 C：全新环境实测
 
-这是一份**全新未使用**的安装（`.dsh-home` 为空、无 profile、用 npm 扁平安装）。
+这是一份**全新未使用**的安装（`DSH_HOME` 指向的目录为空、无 profile、用 npm 扁平安装）。
 在该环境上从零安装并测试，用于验证"**全新用户拿到插件能不能跑起来**"。
 
 | 验证项 | 方法 | 结果 |

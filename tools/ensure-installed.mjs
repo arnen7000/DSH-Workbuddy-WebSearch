@@ -6,7 +6,8 @@
  *
  *   node "<本插件目录>/tools/ensure-installed.mjs" "<DSH_HOME>" web
  *
- * 其中 <DSH_HOME> 是 dsh 的数据根（profile 所在的 `.dsh-home` 目录）。
+ * 其中 <DSH_HOME> 是你那一份 dsh 的数据根（profile 所在目录；dsh 未设 DSH_HOME 时
+ * 默认为 ~/.dsh，可用 `dsh --profile <name> --dump-config` 确认用的是哪个）。
  * Windows 下用 cmd 时要加引号，或写成单行。
  *
  * 做三件事（全部幂等）：

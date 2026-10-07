@@ -45,7 +45,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 
 ## 2. 三层套件的分工
 
-### 2.1 `tools/regression.mjs` — 正常路径 + 契约（T1–T10，86 项）
+### 2.1 `tools/regression.mjs` — 正常路径 + 契约（T1–T10，87 项）
 
 被测对象：**已安装的插件实体目录**（`link:` junction 或 `.tgz` 解包后的目录均算）。
 无凭据时会自动把 T3/T5 降级为 `WARN`，因此 CI 上恒可跑。
@@ -56,11 +56,11 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 | T2 | patch 与版本策略契约 | 挂载行 id/name、`searchProvider`、**复述 `fetchProvider: http`**、**`dsh.compatibility` 为宽松下界且未声明 DSH peer（T2.7–T2.10）** |
 | T3 | 凭据解析 | connect 桥、双 variant store 枚举 |
 | T4 | 区域切换 | config 优先于 env，`china`→`cn` 归一化 |
-| T5 | 真实搜索 | 仅在有凭据时跑；sources 非空、综述非空、`<selected-refs>` 已清 |
+| T5 | 真实搜索 | 仅在有凭据时跑；sources 非空、综述非空、`<selected-refs>` 已清。**降级判据**：错误为 `electron-binary-unavailable`（本机装在自选路径/未装桌面端）→ `WARN` 跳过；`decryption-failed` 等真实缺陷 → `FAIL` |
 | T6 | 纯函数 | `extractSources` / `cleanSynthesis` / `parseWorkBuddyAuth` / `regionOf` / `chatBase` |
 | T7 | 错误路径 | 空 query 报错码、`available()` 返回布尔、abort 码 |
 | T8 | 边界 | 重复导入、`__internals` 齐全、候选路径含国际版 |
-| T9 | 零依赖自足 | 三个自带模块可独立加载、只依赖 `node:` 与相对路径、AES 往返；**key helper 的绑定契约（T9.15/T9.16 源码断言：必须是 `_linkedBinding("electron_browser_workbuddy_storage").loggerGet()`）**、真实载荷形状兼容（T9.17/T9.18）、**provider id 冲突的可操作报错（T9.19/T9.20）** |
+| T9 | 零依赖自足 | 三个自带模块可独立加载、只依赖 `node:` 与相对路径、AES 往返；**key helper 的绑定契约（T9.15/T9.16 源码断言：必须是 `_linkedBinding("electron_browser_workbuddy_storage").loggerGet()`）**、真实载荷形状兼容（T9.17/T9.18）、**provider id 冲突的可操作报错（T9.19/T9.20/T9.21：带冲突 id + 给出排查步骤 + 不点名任何具体插件）** |
 | T10 | 平台覆盖 | win32/darwin 候选路径、cpu 约束、**Windows 安装根有界扫描（T10.13–T10.23：命中 per-user / 系统级 / 目录名变体，缺失不误报，重叠根去重，非法入参不抛，env 显式优先，以及「已接线」静态断言）**、真实二进制探测（T10.24，仅 win32） |
 
 > **为什么 T9.15/T9.16 是源码断言而不是行为测试**：key helper 是**另一个进程**里跑的私有绑定调用，
@@ -103,7 +103,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 >
 > **S8 保护的是「体系化」这件事本身**：如果哪天有人删了 `TESTING.md`、或把套件从 CI 里摘掉，S8 会立刻红——防止「又回到每次重新推演」的状态。
 
-### 2.3 `tools/check-github-meta.mjs` — GitHub 元数据自检（G1–G9，31 项）
+### 2.3 `tools/check-github-meta.mjs` — GitHub 元数据自检（G1–G9，33 项）
 
 被测对象：**仓库根目录**。这一层不测插件运行时，而是测**仓库在 GitHub 上的"门面"是否齐备且格式合法**——
 缺文件只会掉勾，但 **Issue 表单格式错会让 GitHub 整份拒收**，所以要钉住。
@@ -177,7 +177,7 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 
 | 检查项 | 命令 / 判据 | 历史事故 |
 |---|---|---|
-| **必须设 `DSH_HOME`** | `echo $DSH_HOME` 应为对应版本的 `.dsh-home` | 曾因未设 `DSH_HOME`，误改了 `~/.dsh/profiles/web/package.json` |
+| **必须设 `DSH_HOME`** | `echo $DSH_HOME` 应为**你要操作的那一份 dsh** 的数据目录 | 曾因未设 `DSH_HOME`，误改了默认数据目录 `~/.dsh` 下的 profile |
 | 插件行已挂载 | `dsh --profile web --dump-config \| grep web-workbuddy-websearch` | — |
 | provider 已生效 | 同命令确认 `searchProvider: workbuddy-agentic` **且** `fetchProvider: http` | grep 上下文不足（`-A3`）曾导致误判「字段被丢」 |
 | link 形态是否自动套 patch | `--dump-config` 看 `searchProvider` 是否仍是 `deepseek-official` | **0.1.5-rc.2 对 `link:` 形态不自动套 bundle patch**，需在 profile 的 `cordis.patch.yml` 里兜底 |

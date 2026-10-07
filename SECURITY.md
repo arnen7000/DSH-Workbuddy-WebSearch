@@ -42,7 +42,7 @@
 
 - **未登录时 `web_search` 会整体报错**（`WEB_PROVIDER_CONFIGURED_UNAVAILABLE`），
   且**不会**静默回退到其他搜索后端。这是 dsh 的 provider 选择语义决定的，属于预期行为，
-  不是降级失败。详见 `README.md` 的「已知边界」。
+  不是降级失败。详见 `README.md` 的「注意事项」。
 - 本插件**不接管 `web_fetch`**（抓取仍走 dsh 内置直连 HTTP），因此抓取行为与本插件无关。
 
 ## 凭据泄露了怎么办

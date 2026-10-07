@@ -18,7 +18,7 @@ GitHub 官方清单共 8 项，**全部为 recommended，无强制**：
 | # | 项目 | 载体 | 我们 | 说明 |
 |---|---|---|---|---|
 | 1 | **Description**（仓库描述） | 网页端设置 | ⬜ **待做** | 不在文件里，创建仓库时填 |
-| 2 | **README** | `README.md` | ✅ 有 | 必需心智，GitHub 首页展示 |
+| 2 | **README** | `README.md` | ✅ 有 | 必需心智，GitHub 首页展示；结构遵循 Standard Readme，见本文 §9 |
 | 3 | **Code of conduct** | `CODE_OF_CONDUCT.md` | ✅ **新增** | Contributor Covenant v2.1 |
 | 4 | **Contributing** | `CONTRIBUTING.md` | ✅ **新增** | 指向 TESTING.md，闭合"怎么改" |
 | 5 | **License** | `LICENSE` | ✅ 有 | MIT |
@@ -80,7 +80,7 @@ CODE_OF_CONDUCT.md                           # Contributor Covenant v2.1
 .github/ISSUE_TEMPLATE/feature_request.yml   # 功能请求表单（6 项，含"不接管抓取"提示）
 .github/ISSUE_TEMPLATE/config.yml            # 关闭空白 Issue，引导先读文档
 .github/dependabot.yml                       # 只盯 GitHub Actions
-tools/check-github-meta.mjs                  # GitHub 元数据自检（G1–G9，31 项）
+tools/check-github-meta.mjs                  # GitHub 元数据自检（G1–G9，33 项）
 ```
 
 **改动文件**
@@ -136,7 +136,8 @@ tools/check-github-meta.mjs                  # GitHub 元数据自检（G1–G9�
 创建 GitHub 仓库后，逐条设置：
 
 1. **Repository name**：`dsh-workbuddy-websearch`
-2. **Description**（对应清单第 1 项）：建议
+2. **Description**（对应清单第 1 项）：**必须与 `package.json` 的 `description`、README 简介
+   三处同文**（见 §9 硬约束 1），当前为
    `将 WorkBuddy 桌面 App 的网络搜索接入 DeepSeek Harness 的 web_search 工具（零配置、零硬依赖）`
 3. **Topics**（提升可发现性）：`dsh` `deepseek-harness` `deepseek` `workbuddy` `web-search` `plugin`
 4. **LICENSE**：仓库已含 `LICENSE`（MIT），GitHub 会自动识别
@@ -163,10 +164,10 @@ node tools/check-github-meta.mjs "$PWD"
 | G5 | CI 最小权限 + 关键步骤接线（含本脚本自身） |
 | G6 | 占位符提示（`<your-gh-user>` / `OWNER/REPO` / TODO 邮箱）——**只 WARN 不阻断** |
 | G7 | 发布面精简（`CREDITS.md` ≤ 6000 bytes、`.local/` 必须被忽略、完整版留在本地） |
-| G8 | **本机信息零泄露**——遍历全部文本文件，禁止本机路径 / 用户名 / 本机目录名（违规即 FAIL） |
+| G8 | **本机信息零泄露**——遍历全部文本文件，禁止本机路径 / 用户名 / 本机目录名 / 本机专属的 dsh 数据目录命名 / 本机专属包名（违规即 FAIL） |
 | G9 | **时间信息分级**——日级 ISO 日期仅白名单允许，只留"基本时间信息"（违规即 FAIL） |
 
-当前：**31 PASS / 0 FAIL / 0 WARN**。
+当前：**33 PASS / 0 FAIL / 0 WARN**。
 
 ---
 
@@ -179,7 +180,7 @@ node tools/check-github-meta.mjs "$PWD"
 | 替换仓库 URL 占位符 | ✅ `package.json`（3 处）、`DEVELOPING.md`（2 处）、`.github/ISSUE_TEMPLATE/config.yml`（3 条 contact_links）、`bug_report.yml`（1 条链接）→ 全部指向 `github.com/arnen7000/dsh-workbuddy-websearch` |
 | 填写联系邮箱 | ✅ `SECURITY.md` + `CODE_OF_CONDUCT.md` → `arnen@126.com` |
 | **清除本机信息** | ✅ 见下 |
-| 自检 | ✅ `node tools/check-github-meta.mjs "$PWD"` → 31 PASS / 0 FAIL / 0 WARN |
+| 自检 | ✅ `node tools/check-github-meta.mjs "$PWD"` → 33 PASS / 0 FAIL / 0 WARN |
 | 推送 | ⏳ 见下（远端仓库已改名为全小写 `dsh-workbuddy-websearch`） |
 
 ### 8.1 本机信息清理明细
@@ -237,3 +238,55 @@ node tools/check-github-meta.mjs "$PWD"
 > 注：Git 提交历史（`git log`）里的时间戳是版本控制系统的固有属性，不属于本项清理范围。
 
 仍需在**网页端**手工完成（文件覆盖不到）：Description、Topics、开启私密漏洞报告、Releases、Community Standards 复核 —— 见第 6 节。
+
+---
+
+## 9. README 结构规范（Standard Readme）
+
+对外 README 遵循 **[Standard Readme](https://github.com/RichardLitt/standard-readme)** 规范
+（社区事实标准，带配套 linter）。**章节必须按下列顺序出现**，可选节可省略：
+
+| 顺序 | 章节 | 状态 | 本项目对应 |
+|---|---|---|---|
+| 1 | Title | 必需 | `# dsh-workbuddy-websearch` |
+| 2 | Banner / Badges | 可选 | 未使用（见下「刻意未做的事」） |
+| 3 | Short Description | 必需 | 标题下一行，**< 120 字符**，无标题、独占一行 |
+| 4 | Long Description | 可选 | 无标题，紧接简介之后 |
+| 5 | Table of Contents | 必需（不足 100 行可省） | `## 目录` |
+| 6 | Security | 可选 | `## 安全` |
+| 7 | Background | 可选 | 未使用 |
+| 8 | Install | 必需 | `## 安装`（子节：`依赖` / `卸载`） |
+| 9 | Usage | 必需 | `## 使用`（子节：`CLI` / `配置`） |
+| 10 | Extra Sections | 可选 | `## 适用范围`、`## 注意事项` |
+| 11 | API | 可选 | 未使用（无对外 API） |
+| 12 | Maintainers | 可选 | 未使用 |
+| 13 | Thanks | 可选 | `## 致谢` |
+| 14 | Contributing | 必需 | `## 参与贡献` |
+| 15 | License | 必需，**必须排在最后** | `## 许可证` |
+
+**三条硬约束**
+
+1. **简介必须与 `package.json` 的 `description` 一致**，并与 GitHub 仓库网页端的
+   Description **三处同文**。当前统一为：
+   > 将 WorkBuddy 桌面 App 的网络搜索接入 DeepSeek Harness 的 web_search 工具（零配置、零硬依赖）
+2. **不得有失效链接**。所有 `./xxx.md` 必须真实存在，外部链接必须可达。
+3. **README 只面向使用者**。实现细节、协议取证、内部权衡一律不进 README，分别归入
+   `DEVELOPING.md`（实现要点与取证）、`COMPATIBILITY.md`（实测依据）、
+   `NORM-COMPLIANCE.md`（规范审计）。
+
+**刻意未做的事**
+
+- **不加 badges**。规范里 badges 是可选项；而 shields.io 在国内网络下常不可达，会渲染成坏图。
+  本项目坚持「零外部资源」，故不加。
+- **不新增 `ARCHITECTURE.md`**。实现说明并入 `DEVELOPING.md`，避免再多一份需要同步的文档
+  （与 §5.2「有意不加 CHANGELOG」同一条理由）。
+
+**改动 README 后的必做动作**
+
+```bash
+node tools/check-github-meta.mjs "$PWD"   # G1–G9，33 项
+node tools/regression.mjs "$PWD"          # T1–T10
+node tools/scenarios.mjs "$PWD"           # S1–S9
+```
+
+再同步 GitHub 网页端的 **Description**（与硬约束 1 同文）与 **Topics**（见第 6 节）。

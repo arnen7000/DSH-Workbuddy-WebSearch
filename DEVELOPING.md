@@ -15,7 +15,7 @@
 | dsh 安装目录 | `<dsh 安装根>` |
 | dsh 自带 node | `<dsh 安装根>\node\node.exe` |
 | dsh CLI 入口 | `<dsh 安装根>\node_modules\@deepseek-ai\dsh\lib\bin.js` |
-| dsh 数据根（DSH_HOME） | `<dsh 安装根>\.dsh-home`（**建议隔离**，不要用全局默认） |
+| dsh 数据根（DSH_HOME） | `<你的 DSH_HOME>`（**建议与全局默认隔离**，避免误改别的环境） |
 | profile 目录 | `<DSH_HOME>\profiles\web` |
 | **联调点** | `<profile>\node_modules\dsh-workbuddy-websearch` → 本源码目录 |
 | 国际版 App | `<WorkBuddy AI 安装目录>\WorkBuddyAI.exe` |
@@ -184,3 +184,67 @@ DSH_HOME="<DSH_HOME>" node "<dsh 安装根>/node_modules/@deepseek-ai/dsh/lib/bi
 
 `tools/regression.mjs` 的 **T2.7–T2.10** 是护栏：会把上界区间、caret 区间、任何 `@deepseek-ai/dsh*`
 peer 声明全部拦下。**别绕过它。** 详见 [NORM-COMPLIANCE.md](./NORM-COMPLIANCE.md) §2.5 与 [README](./README.md) 的「版本策略」。
+
+## 实现要点与取证
+
+> 本节原为 README 的「工作原理」一节。README 只面向**使用者**，实现细节与取证记录归到此处。
+
+### 数据流
+
+```
+dsh 会话                     本插件                        WorkBuddy 云端
+   │                           │                              │
+   │  模型调 web_search        │                              │
+   │  {queries:[...]}  ──────▶ │                              │
+   │                           │  读凭据(只读)：              │
+   │                           │  .workbuddy-auth.json /      │
+   │                           │  桌面端 workbuddy-desktop.info│
+   │                           │  (过期→内存 refresh，不写盘) │
+   │                           │                              │
+   │                           │  POST /agenttool/v1/         │
+   │                           │  agentic_search              │
+   │                           │  {query,search_mode:2,       │
+   │                           │   stream:true,biz_via}       │
+   │                           │  Authorization: Bearer token │────▶ 远程 agent
+   │                           │  ◀── SSE: tool_call/result   │      多步检索
+   │                           │  ◀── SSE: done(synthesis)    │
+   │                           │                              │
+   │  {content: 综述,          │  提取 markdown 链接→sources  │
+   │   sources:[{url,title}]}◀─│  清理 <selected-refs>        │
+   │  经 ctx.web 接缝回给模型   │                              │
+```
+
+### 端点取证
+
+来源：WorkBuddy 桌面 App 的 `app.asar` 内 `builtin-tools/tools/agentic-search-tool.ts`
+（反编译确认 + 实测 200 OK）。取证日期 `2026-09-24`。
+
+- `POST {网关}/agenttool/v1/agentic_search`，网关国内 `https://copilot.tencent.com`、
+  国际 `https://www.workbuddy.ai`（按凭据 `domain` 字段自动分流）；
+- 请求体 `{query, search_mode: 2, stream: true, biz_via}`，
+  `biz_via = enterpriseId ? "internal" : "public"`；
+- 响应为 SSE：`done` 事件的 `synthesis.content` 即带引用的综述。
+
+### 接缝取证
+
+dsh 的搜索能力走 `ctx.web`（`@deepseek-ai/dsh-web`），接口为
+`registerSearchProvider(provider)`；三个版本（0.1.5-rc.2 / 0.1.6-alpha.2 / 0.1.7-rc.1）
+该接缝完全一致。本插件的 `cordis.patch.yml` 做两件事：
+
+1. 挂载插件行 `web-workbuddy-websearch`；
+2. 把 `web` 行的 `searchProvider` 从 `deepseek-official` 改为 `workbuddy-agentic`
+   （dsh 的 provider 选择是「配置了 id 就认死」，不覆盖则 `web_search` 永远先撞
+   DeepSeek 的 API Key 校验）。
+
+### 为什么 patch 里要显式复述 `fetchProvider`
+
+本插件的 `cordis.patch.yml` **显式复述** `fetchProvider: http`，是因为 dsh 的 patch
+语义是「按 id **整行替换** config」而非合并 —— 不写这一行，`web` 行原有的 `fetchProvider`
+会被静默抹掉。实测三版本（0.1.5-rc.2 / 0.1.7-rc.1 / 0.2.0-rc.2）的最终配置均完整保留
+`fetchProvider: http`。对应护栏：`tools/scenarios.mjs` 的 **S7.3**。
+
+### 接管范围
+
+本插件只接管 `web_search`，**不接管** `web_fetch`（后者仍是 dsh 原生的直连 HTTP）。
+面向用户的表述见 [README 的「注意事项」](./README.md#注意事项)，对应护栏见
+`tools/scenarios.mjs` 的 **S7.2**。
