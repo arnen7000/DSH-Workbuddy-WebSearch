@@ -16,6 +16,8 @@ agentic 检索，返回**带引用来源的综述文本**。不需要任何 API 
 
 - [安全](#安全)
 - [安装](#安装)
+  - [快速开始](#快速开始)
+  - [遇到问题](#遇到问题)
   - [依赖](#依赖)
   - [卸载](#卸载)
 - [使用](#使用)
@@ -24,6 +26,7 @@ agentic 检索，返回**带引用来源的综述文本**。不需要任何 API 
 - [适用范围](#适用范围)
   - [版本策略：允许更新版本安装，只声明「已验证到哪」](#版本策略允许更新版本安装只声明已验证到哪)
 - [注意事项](#注意事项)
+- [变更记录](#变更记录)
 - [致谢](#致谢)
 - [参与贡献](#参与贡献)
 - [许可证](#许可证)
@@ -40,6 +43,36 @@ agentic 检索，返回**带引用来源的综述文本**。不需要任何 API 
 前置只有一条：**本机已安装并登录 WorkBuddy 桌面 App**（国内版 WorkBuddy 或国际版
 WorkBuddy AI 任一）。
 
+### 快速开始
+
+对**每一份** dsh 副本执行一次，用你平时启动 dsh 的方式调用它的 CLI：
+
+```bash
+# <本插件目录>：你 clone 下来的仓库路径
+dsh plugin --profile web add <本插件目录>
+```
+
+**重启 dsh 即生效** —— `web_search` 走 WorkBuddy 搜索，模型回答里会带来源链接。
+
+核验（应看到 `searchProvider: workbuddy-agentic` 与 `id: web-workbuddy-websearch`）：
+
+```bash
+dsh --profile web --dump-config | grep -i "workbuddy-websearch\|searchProvider"
+```
+
+若 `dsh` 不在 `PATH` 上，直接用它的绝对入口调用，效果相同：
+
+```bash
+"<node>" "<dsh 安装根>/node_modules/@deepseek-ai/dsh/lib/bin.js" plugin --profile web add "<本插件目录>"
+```
+
+### 遇到问题
+
+**`add` 报错、或核验不通过**时，见
+[DEVELOPING.md → 安装排障](./DEVELOPING.md#安装排障在一个全新-dsh-环境上踩到的两个坑)：
+那里覆盖两个已知坑（pnpm 不落地 `link:` 依赖、`add` 的「半状态」陷阱）、
+配套的修复脚本 `tools/ensure-installed.mjs`，以及「开发态 vs 发布态」的说明。
+
 > **`dsh-workbuddy-connect` 是可选增强，不是前置。** 装了会更稳（复用其久经验证的凭据 store），
 > 不装也能完整工作。详见[适用范围](#适用范围)。
 
@@ -54,47 +87,6 @@ WorkBuddy AI 任一）。
 > 数据目录（`~/.dsh`）。若你平时是用某个包装脚本 / 固定数据目录启动 dsh 的，
 > 请让安装时的 `DSH_HOME` 与它**保持一致**，否则插件会被装进另一个你并不会启动的环境。
 > 用各发行版自带的 `dsh` / `dsh.bat` 启动可避免此问题。
-
-对**每一份** dsh 副本执行一次，用你平时启动 dsh 的方式调用它的 CLI：
-
-```bash
-# <本插件目录>：你 clone 下来的仓库路径，或 npm 包名
-dsh plugin --profile web add <本插件目录>
-```
-
-若 `dsh` 不在 `PATH` 上，直接用它的绝对入口调用，效果相同：
-
-```bash
-"<node>" "<dsh 安装根>/node_modules/@deepseek-ai/dsh/lib/bin.js" plugin --profile web add "<本插件目录>"
-```
-
-核验（应看到 `searchProvider: workbuddy-agentic` 与 `id: web-workbuddy-websearch`）：
-
-```bash
-dsh --profile web --dump-config | grep -i "workbuddy-websearch\|searchProvider"
-```
-
-若核验不通过 → 跑安装助手修复链接与 `bundles` 登记：
-
-```bash
-node "<本插件目录>/tools/ensure-installed.mjs" "<你的 DSH_HOME>" web
-```
-
-> 📌 **上面「安装助手」那一步仅适用于「从源码 / git 安装」**：安装助手随仓库分发，
-> **不进 npm 包**，所以 `<本插件目录>` 必须是你 clone 下来的仓库路径，不能是 npm 解出的包目录。
-> 若你是从 npm 装的又撞上了链接不落地的坑，可以按上面方式 clone 一份源码，
-> 用它的 `tools/ensure-installed.mjs` 修（脚本只操作 profile，与插件来源无关，照样管用）。
-
-> **两个已知的 pnpm 坑**：
-> ① `plugin add <本地目录>` 在部分环境下会把 `node_modules/dsh-workbuddy-websearch`
-> 留成**空目录**（而非 junction），且首次 add 可能不登记 `bundles`；
-> ② **版本号未变时重装不会刷新** —— pnpm 判定 "Lockfile is up to date" 直接跳过，
-> 改过的代码不会被覆盖。迭代时**必须 bump version**，或先 `remove` 再 `add`。
-
-重启 dsh 后，`web_search` 即走 WorkBuddy 搜索（模型回答里会带来源链接）。
-
-> **开发态 vs 发布态**：依赖写成 `link:<源码目录>` 即「开发态」（改源码立即生效，无需重装）；
-> 写成 `file:<某.tgz>` 即「发布态」（装的是快照，改源码需重装）。联调用前者，模拟用户安装用后者。
 
 ### 依赖
 
@@ -245,6 +237,22 @@ dsh headless "帮我搜一下最近的 XX 进展"
 
 - 📋 **失败态可自查**：`node tools/scenarios.mjs <插件目录>` 会离线验证 40 项异常路径
   （空查询、断网、401、流畸形、凭据损坏、并发、abort、接管范围、connect 装了但坏掉等）。
+
+## 变更记录
+
+只列对外可读的要点。**每个版本的完整说明见 [Releases](https://github.com/arnen7000/dsh-workbuddy-websearch/releases)**；
+机器可读的全量摘要见 `package.json` 的 `versionNote`。
+
+| 版本 | 要点 |
+|---|---|
+| **0.2.6** | 文档按读者分层：安装拆成「快速开始」与「遇到问题」，开发态细节移入 DEVELOPING.md；新增本变更记录 |
+| **0.2.5** | 冲突提示改为通用表述（不再点名具体插件）；安装文档去本机化；修正测试降级判据（环境差异不再误判为缺陷） |
+| **0.2.4** | 修复三个真实缺陷：5.6+ 加密凭据解不开、Windows 缺 Electron 自动发现、connect 可能复用过期凭据 |
+| **0.2.3** | 版本策略改为「允许更新版本安装，只声明已验证到哪」；精简 CREDITS；补齐测试与社区档案文档 |
+| **0.2.2** | 新增异常路径测试套件；修两个健壮性缺陷；补「只管搜索、不管抓取」等用户场景说明 |
+| **0.2.1** | 转为**零硬依赖**：自带平台定位与凭据解密，不装 `dsh-workbuddy-connect` 也能完整工作；扩展到 macOS（实验性） |
+| **0.2.0** | 委托 connect 的凭据 store；支持国际版与加密凭据 |
+| **0.1.0** | 首版 |
 
 ## 致谢
 

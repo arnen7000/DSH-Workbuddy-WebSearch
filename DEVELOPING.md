@@ -161,6 +161,34 @@ DSH_HOME="<DSH_HOME>" node "<dsh 安装根>/node_modules/@deepseek-ai/dsh/lib/bi
 > 只有 **0.1.5-rc.2** 需要在 profile `cordis.patch.yml` 里补 `- id: web` 覆盖。
 > 装完若 `searchProvider` 仍是 `deepseek-official`，就是这条差异。
 
+### 修复脚本 `tools/ensure-installed.mjs`
+
+上面两个坑（链接不落地、`bundles` 没登记）可一次修好：
+
+```bash
+node "<本插件目录>/tools/ensure-installed.mjs" "<你的 DSH_HOME>" web
+```
+
+它只操作 profile（补 junction + 补 `dsh.profile.bundles`），与插件来源无关。
+
+> 📌 **该脚本随仓库分发、不进 npm 包**，所以 `<本插件目录>` 必须是你 clone 下来的仓库路径，
+> 不能是 npm 解出的包目录。若你是从 npm 装的又撞上了链接不落地的坑，
+> clone 一份源码用它的脚本修即可 —— 脚本照样管用。
+
+### 开发态 vs 发布态
+
+依赖协议决定「改源码是否立即生效」：
+
+| 依赖写法 | 形态 | 改源码后 |
+|---|---|---|
+| `link:<源码目录>` | **开发态** | 立即生效，无需重装 |
+| `file:<某.tgz>` | **发布态** | 装的是快照，需重装 |
+
+联调用前者，模拟真实用户安装用后者。
+
+> ⚠️ **版本号未变时重装不会刷新** —— pnpm 判定 "Lockfile is up to date" 直接跳过，
+> 改过的代码不会被覆盖。迭代时**必须 bump version**，或先 `remove` 再 `add`。
+
 ## 本地专属文件（不进 GitHub）
 
 `.local/` 已被 `.gitignore` 忽略，用来放**只给自己看**的内容：

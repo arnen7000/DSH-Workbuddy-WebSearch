@@ -107,9 +107,16 @@ tools/check-github-meta.mjs                  # GitHub 元数据自检（G1–G9�
 
 - **CODEOWNERS**：单人维护，价值有限。若日后有人协作，建议加一行
   `/github/workflows/ @<owner>` 以监控工作流改动。
-- **CHANGELOG.md**：不在 GitHub 社区档案清单内。本项目的变更摘要已由
-  `package.json` 的 `versionNote`（机器可读）与 `COMPATIBILITY.md`（人读）承担，
-  再加一份会造成"三处维护"。**故有意不加。**
+- **独立的 `CHANGELOG.md`**：不在 GitHub 社区档案清单内，**故不单独建文件**。
+  变更信息按**粒度分层**承担，不做简单复制：
+  - **GitHub Releases** —— 每个版本的**完整**对外说明，是权威来源（见 §6 第 5 条）；
+  - **README 的 `## 变更记录`** —— 每个版本**一行**要点，面向使用者，便于一眼扫过；
+  - **`package.json` 的 `versionNote`** —— 机器可读的全量摘要，含实现级细节。
+
+  > 早期曾决定「完全不写变更记录」，理由是怕三处维护。实践下来发现**真正的痛点不是
+  > 重复，而是没有落点** —— 版本信息一旦只存在于 commit 标题里，GitHub 文件列表就会
+  > 给**每个文件**重复显示同一条长信息（那一列无法关闭），既难看又无信息量。
+  > 改为分层后：commit 标题只写**动作**，版本要点归 README 一行 + Release 全量。
 - **FUNDING.yml / GitHub Sponsors**：与项目定位无关，跳过。
 
 ### 5.3 发布面精简：长文不外发
@@ -128,6 +135,27 @@ tools/check-github-meta.mjs                  # GitHub 元数据自检（G1–G9�
 > 已在推送前做了一次历史重写，把各提交里的 `CREDITS.md` 统一替换为精简版——
 > 因此 **GitHub 上任何位置（含 `git log -p`）都只有精简版**。完整版仅存于本地
 > `.local/CREDITS-full.md`。重写前的全量备份见仓库外的 `*.bundle`。
+
+### 5.4 提交信息规范
+
+**标题只写动作，不带版本号长文。**
+
+```text
+✅ fix: 冲突提示通用化,并修正 T5 的降级判据
+❌ feat: dsh-workbuddy-websearch v0.2.5 — 对外表述通用化 + 测试降级判据修正
+```
+
+理由：GitHub 仓库文件列表右侧的 **"Last commit message" 列无法关闭**，它会给
+**每个文件**重复显示「最后改动它的那次提交」的标题。标题一旦写成 89 字符的版本号长文，
+整列就会被截断成一模一样的 `…对外表述通用化 + …`，既难看又无信息量。
+
+- 标题：`<type>: <动作>`（`feat` / `fix` / `docs` / `chore` …），建议 ≤ 60 字符；
+- 正文：列要点，每行一条 `-`；
+- **版本要点归 README 的 `## 变更记录`（一行）与 GitHub Release（全量）**，不写进标题。
+
+> ⚠️ **改短已有提交信息必须重写历史。** 建一个 tree 不变的新提交**完全无效** ——
+> 它没改动任何文件，GitHub 仍把文件归属到旧提交。改完用
+> `GET /commits?path=<文件>&sha=main&per_page=1` 逐个文件核验归属。
 
 ---
 
@@ -257,7 +285,7 @@ node tools/check-github-meta.mjs "$PWD"
 | 7 | Background | 可选 | 未使用 |
 | 8 | Install | 必需 | `## 安装`（子节：`依赖` / `卸载`） |
 | 9 | Usage | 必需 | `## 使用`（子节：`CLI` / `配置`） |
-| 10 | Extra Sections | 可选 | `## 适用范围`、`## 注意事项` |
+| 10 | Extra Sections | 可选 | `## 适用范围`、`## 注意事项`、`## 变更记录` |
 | 11 | API | 可选 | 未使用（无对外 API） |
 | 12 | Maintainers | 可选 | 未使用 |
 | 13 | Thanks | 可选 | `## 致谢` |
@@ -279,7 +307,11 @@ node tools/check-github-meta.mjs "$PWD"
 - **不加 badges**。规范里 badges 是可选项；而 shields.io 在国内网络下常不可达，会渲染成坏图。
   本项目坚持「零外部资源」，故不加。
 - **不新增 `ARCHITECTURE.md`**。实现说明并入 `DEVELOPING.md`，避免再多一份需要同步的文档
-  （与 §5.2「有意不加 CHANGELOG」同一条理由）。
+  （与 §5.2「不单独建变更日志文件」同一条理由）。
+
+> **`## 变更记录` 属于规范里的 Extra Sections。** Standard Readme **没有** Changelog 章节，
+> 但 Extra Sections 允许任意自定章节，故放在 `## 使用` 之后、`## 致谢` 之前是合规的。
+> 注意它**必须出现在 `## 目录` 里**，否则 `check-links.mjs` 的 L4 会报目录不完整。
 
 **改动 README 后的必做动作**
 
@@ -287,6 +319,7 @@ node tools/check-github-meta.mjs "$PWD"
 node tools/check-github-meta.mjs "$PWD"   # G1–G9，33 项
 node tools/regression.mjs "$PWD"          # T1–T10
 node tools/scenarios.mjs "$PWD"           # S1–S9
+node .local/check-links.mjs "$PWD"        # L1–L4（L4 = README 目录完整性，最易被漏）
 ```
 
 再同步 GitHub 网页端的 **Description**（与硬约束 1 同文）与 **Topics**（见第 6 节）。
