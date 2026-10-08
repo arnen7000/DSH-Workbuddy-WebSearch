@@ -20,7 +20,7 @@
  *   node regression.mjs "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-websearch"
  */
 import { pathToFileURL } from "node:url";
-import { readFileSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -108,26 +108,46 @@ if (bridge === undefined) {
   check("T3.3", regions.includes("global") && regions.includes("cn"), "同时枚举 国内(cn) + 国际(global)");
 }
 
-// ── T4 区域切换（config > env > 默认）──
-section("T4 区域切换（配置优先级）");
+// ── T4 区域设置（config > env > 默认 auto）──
+section("T4 区域设置（配置优先级）");
 delete process.env.WORKBUDDY_SEARCH_REGION;
 mod.configure({});
-check("T4.1", I.preferredRegion() === "global", "无配置时默认 global（国际版优先）");
+check("T4.1", I.regionSetting() === "auto", "无配置时默认 auto（选实际可用的那一版）");
 mod.configure({ region: "cn" });
-check("T4.2", I.preferredRegion() === "cn", "config.region=cn → cn");
+check("T4.2", I.regionSetting() === "cn", "config.region=cn → cn");
 mod.configure({ region: "china" });
-check("T4.3", I.preferredRegion() === "cn", "config.region=china 归一化为 cn");
+check("T4.3", I.regionSetting() === "cn", "config.region=china 归一化为 cn");
 mod.configure({});
 process.env.WORKBUDDY_SEARCH_REGION = "cn";
-check("T4.4", I.preferredRegion() === "cn", "env WORKBUDDY_SEARCH_REGION=cn → cn");
+check("T4.4", I.regionSetting() === "cn", "env WORKBUDDY_SEARCH_REGION=cn → cn");
 process.env.WORKBUDDY_SEARCH_REGION = "global";
 mod.configure({ region: "cn" });
-check("T4.5", I.preferredRegion() === "cn", "config 覆盖 env（config 优先）");
+check("T4.5", I.regionSetting() === "cn", "config 覆盖 env（config 优先）");
+// 别名与容错（清掉 env，避免它干扰「config 无有效值」的用例）
+delete process.env.WORKBUDDY_SEARCH_REGION;
+mod.configure({ region: "ai" });
+check("T4.6", I.regionSetting() === "global", "config.region=ai → global（别名）");
+mod.configure({ region: "international" });
+check("T4.7", I.regionSetting() === "global", "config.region=international → global（别名）");
+mod.configure({ region: "glboal" });
+check("T4.8", I.regionSetting() === "auto", "拼错的值 → auto（不静默当成 global，避免误扣另一账号）");
+mod.configure({ region: "   " });
+check("T4.9", I.regionSetting() === "auto", "纯空白值 → auto");
 mod.configure({});
+check(
+  "T4.10",
+  Array.isArray(I.AUTO_REGION_ORDER) && I.AUTO_REGION_ORDER[0] === "global",
+  `AUTO_REGION_ORDER 首项为 global（两版都可用时保持 v0.2.x 的额度归属）：${JSON.stringify(I.AUTO_REGION_ORDER)}`,
+);
 
-// ── T5 真实搜索 ──
-section("T5 真实搜索（国际版）");
-process.env.WORKBUDDY_SEARCH_REGION = "global";
+// ── T5 真实搜索（区域由绑定决定）──
+// v0.3.0 起默认 region=auto：先绑定**实际可用**的那一版再做真实搜索。
+// 不再固定 global —— 固定 global 在「只装了国内版」的机器上只会拿到错误，
+// 而错误本身正是 T5.6 要断言的东西。
+section("T5 真实搜索（区域绑定）");
+delete process.env.WORKBUDDY_SEARCH_REGION;
+mod.configure({});
+I.resetBinding();
 let cred;
 try {
   cred = await I.resolveCredential(false, undefined);
@@ -142,9 +162,9 @@ try {
   // 判据：错误信息里点名了 Electron 二进制不可用 → 环境差异，WARN；其余（解密失败、
   // 凭据格式损坏等）仍视为 FAIL，避免把真实缺陷一起放过。
   const msg = e.message || String(e);
-  const envRelated = /electron-binary-unavailable|未能自动定位到它|未能自动定位/i.test(msg);
+  const envRelated = /electron-binary-unavailable|未能自动定位到它|未能自动定位|没有找到可用的/i.test(msg);
   if (envRelated) {
-    warn("T5.1", "本机未定位到国际版 Electron 二进制 → 跳过真实搜索（环境差异，非代码缺陷；可设 WORKBUDDY_AI_ELECTRON_BIN 后复跑）");
+    warn("T5.1", "本机两版都没解析出凭据 → 跳过真实搜索（环境差异，非代码缺陷；可设 WORKBUDDY_*_ELECTRON_BIN 后复跑）");
   } else {
     bad("T5.1", "凭据解析失败（可能未登录）: " + msg);
   }
@@ -159,6 +179,32 @@ if (cred) {
   } catch (e) {
     bad("T5.2", "真实搜索失败: " + (e.message || e));
   }
+}
+
+// T5.6 「拒绝跨版回落」的现场版：显式指定 global 后，本机要么真的给出国际版凭据，
+//      要么给出**明确的错误** —— 绝不能悄悄改用国内版凭据（那会扣错账号）。
+//      两种结果都算通过，因为断言的是「不混用」这条不变量本身。
+{
+  process.env.WORKBUDDY_SEARCH_REGION = "global";
+  I.resetBinding();
+  let forced;
+  try { forced = await I.resolveCredential(false, undefined); } catch (e) { forced = e; }
+  if (forced instanceof Error) {
+    const code = String(forced.code ?? "");
+    check(
+      "T5.6",
+      ["WB_SEARCH_CREDENTIAL_ENCRYPTED", "WB_SEARCH_CREDENTIAL_MISSING", "WB_SEARCH_CREDENTIAL_REGION_MISMATCH"].includes(code),
+      `强制 region=global 且本机不可用 → 明确报错（${code}），未静默改用国内版`,
+    );
+  } else {
+    check(
+      "T5.6",
+      forced.variant?.region === "global",
+      `强制 region=global → 拿到的确实是国际版凭据（${forced.variant?.region}）`,
+    );
+  }
+  delete process.env.WORKBUDDY_SEARCH_REGION;
+  I.resetBinding();
 }
 
 // ── T6 纯函数 ──
@@ -207,9 +253,22 @@ process.env.WORKBUDDY_SEARCH_MAX_CONTENT_CHARS = "0";
 check("T8.1", (await import(entry)), "重新导入入口正常");
 const internalsKeys = Object.keys(I).sort();
 check("T8.2", internalsKeys.includes("callAgenticSearch") && internalsKeys.includes("resolveCredential"), "__internals 关键钩子齐全");
-const cands = I.syncCredentialCandidates();
-check("T8.3", Array.isArray(cands) && cands.length >= 2, `同步凭据候选路径数 = ${cands.length}（含国际版）`);
-check("T8.4", cands.some(p => /workbuddy-desktop-ai\.info$/.test(p)), "候选含国际版 workbuddy-desktop-ai.info");
+// T8.3–T8.6 凭据候选枚举（v0.3.0 起按变体隔离：这是「不跨版回落」的第一道防线）
+const cnCands = I.syncCredentialCandidates(I.VARIANTS[0]);
+const aiCands = I.syncCredentialCandidates(I.VARIANTS[1]);
+check("T8.3", Array.isArray(aiCands) && aiCands.length >= 2, `国际版凭据候选路径数 = ${aiCands.length}`);
+check("T8.4", aiCands.some(p => /workbuddy-desktop-ai\.info$/.test(p)), "国际版候选含 workbuddy-desktop-ai.info");
+check(
+  "T8.5",
+  !cnCands.some(p => /workbuddy-desktop-ai\.info$/.test(p))
+    && !aiCands.some(p => /workbuddy-desktop\.info$/.test(p)),
+  "两版候选路径互不交叉（各自只列自己那一版的文件）",
+);
+check(
+  "T8.6",
+  Array.isArray(I.syncCredentialCandidates(undefined)),
+  "未绑定/无凭据时候选枚举仍返回数组（不抛）",
+);
 
 // ── T9 零依赖自足（v0.2.1 核心保证）──
 section("T9 零依赖自足（不依赖 dsh-workbuddy-connect）");
@@ -388,7 +447,7 @@ check("T10.8", Array.isArray(pkg.os) && pkg.os.includes("win32") && pkg.os.inclu
 check("T10.9", Array.isArray(pkg.cpu) && pkg.cpu.includes("x64") && pkg.cpu.includes("arm64"), "cpu 声明 x64 + arm64（挡 32 位）");
 check("T10.10", !(pkg.cpu ?? []).includes("ia32"), "cpu 明确不含 ia32（32 位 WorkBuddy 桌面端不存在）");
 check("T10.11", pkg.peerDependenciesMeta?.["dsh-workbuddy-connect"]?.optional === true, "connect 保持 optional peerDependency");
-check("T10.12", pkg.version === "0.2.1" || /^0\.2\.[0-9]+$/.test(pkg.version), `版本号 ${pkg.version}`);
+check("T10.12", /^0\.3\.[0-9]+$/.test(pkg.version), `版本号 ${pkg.version}（0.3.x 区域绑定线）`);
 
 // ── T10.13+ Windows 常见安装根扫描（scanWindowsInstallRoots） ──
 // 设计要点：该函数**自身不做 process.platform 判定**，只按传入 env 的根目录扫描，
@@ -499,6 +558,323 @@ check("T10.12", pkg.version === "0.2.1" || /^0\.2\.[0-9]+$/.test(pkg.version), `
       warn("T10.24", "本机未自动定位到国内版 Electron（未安装或装在自选路径 → 需 WORKBUDDY_ELECTRON_BIN）");
     }
   }
+}
+
+// ── T10.25–T10.32 Windows 卸载注册表发现（合成 `reg query` 输出，跨平台可验） ──
+// 为什么需要这条路径：国内版与国际版可以装进**同一个目录**，此时目录扫描的
+// 「目录名须以 WorkBuddy 开头」规则对国际版失效（目录名里没有 ` AI`），而国际版
+// 又没有已验证的默认安装位置 —— 卸载注册表是唯一可靠且不靠猜的信息源。
+// 所有夹具都建在临时目录里，`reg.exe` 用注入的执行器替代，因此 ubuntu-latest 上同样可跑。
+{
+  const need = [
+    "parseDisplayIcon", "parseUninstallRecords", "inspectElectronCandidate",
+    "findElectronFromUninstallRecords", "resolveElectronFromRegistry",
+    "uninstallRecords", "resetUninstallRecordsCache",
+  ];
+  const missing = need.filter((k) => typeof plat?.[k] !== "function");
+  if (missing.length > 0 || !Array.isArray(plat?.WINDOWS_UNINSTALL_ROOTS)) {
+    bad("T10.25", `lib/platform.mjs 缺少注册表发现导出：${missing.join(", ") || "WINDOWS_UNINSTALL_ROOTS"}`);
+  } else {
+    // 1) DisplayIcon 的三种实测形态
+    //    盘符拆成常量拼接：仓库里不得出现字面量盘符绝对路径（check-github-meta 的 G8.6）
+    const DRIVE = "Q:";
+    const sample = `${DRIVE}\\dir\\App.exe`;
+    check(
+      "T10.25",
+      plat.parseDisplayIcon(`"${sample}",0`) === sample
+        && plat.parseDisplayIcon(`${sample},0`) === sample
+        && plat.parseDisplayIcon(sample) === sample
+        && plat.parseDisplayIcon("") === undefined
+        && plat.parseDisplayIcon(undefined) === undefined,
+      "parseDisplayIcon 覆盖三种实测形态（带引号+索引 / 裸路径+索引 / 裸路径）并拒绝空值",
+    );
+
+    const tmp = mkdtempSync(join(tmpdir(), "dsh-wb-reg-"));
+    try {
+      // 一个**合法**的 Electron 布局：exe 名相符 + 同级 version 形如 37.10.3-24 + resources/app.asar
+      const makeInstall = (dir, exeName) => {
+        mkdirSync(join(dir, "resources"), { recursive: true });
+        const exe = join(dir, exeName);
+        writeFileSync(exe, "");
+        // Linux 上 accessSync(X_OK) 需要可执行位；Windows 上为无操作。
+        try { chmodSync(exe, 0o755); } catch {}
+        writeFileSync(join(dir, "version"), "37.10.3-24");
+        writeFileSync(join(dir, "resources", "app.asar"), "");
+        return exe;
+      };
+      // 一个**不合格**的布局：缺 version 与 resources/app.asar（例如 DisplayIcon 指向卸载程序）
+      const makeBogus = (dir, exeName) => {
+        mkdirSync(dir, { recursive: true });
+        const exe = join(dir, exeName);
+        writeFileSync(exe, "");
+        try { chmodSync(exe, 0o755); } catch {}
+        return exe;
+      };
+
+      const rootA = join(tmp, "install-a");
+      const rootB = join(tmp, "install-b");
+      const exeA = makeInstall(rootA, "WorkBuddy.exe");
+      const bogus = makeBogus(join(tmp, "uninstaller"), "Uninstall WorkBuddy.exe");
+
+      const record = (key, displayName, displayIcon, installLocation) => [
+        `HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${key}`,
+        `    DisplayName    REG_SZ    ${displayName}`,
+        `    DisplayIcon    REG_SZ    ${displayIcon}`,
+        ...(installLocation === undefined ? [] : [`    InstallLocation    REG_SZ    ${installLocation}`]),
+        `    UninstallString    REG_SZ    ${bogus}`,
+        "",
+      ].join("\n");
+
+      // 2) 解析：只认三个值名、大小写不敏感、其余值一律忽略
+      {
+        const output = record("WorkBuddy", "WorkBuddy 5.7.6", `"${exeA}",0`, rootA)
+          + record("Other", "Some Other App", `"${bogus}",0`, undefined);
+        const records = plat.parseUninstallRecords(output);
+        const wb = records.find((r) => r.displayName === "WorkBuddy 5.7.6");
+        check(
+          "T10.26",
+          records.length === 2
+            && wb?.displayIcon === exeA
+            && wb?.installLocation === rootA
+            && wb?.uninstallString === undefined,
+          "parseUninstallRecords 逐条取出 DisplayName/DisplayIcon/InstallLocation（大小写不敏感），忽略其余值",
+        );
+      }
+
+      // 3) 单候选命中（布局校验通过）
+      {
+        const records = plat.parseUninstallRecords(record("WorkBuddy", "WorkBuddy 5.7.6", `"${exeA}",0`, rootA));
+        const outcome = plat.findElectronFromUninstallRecords(records, {
+          exeBasename: "workbuddy.exe",
+          displayNamePattern: /^WorkBuddy(?:\s+\d+(?:\.\d+)+)?$/u,
+          platform: "win32",
+        });
+        check(
+          "T10.27",
+          outcome.found === true && outcome.path === exeA,
+          `单候选 → 命中（并返回磁盘上的真实文件名 ${outcome.path?.split(/[\\/]/u).pop() ?? "?"}）`,
+        );
+      }
+
+      // 4) 两个合法候选 → 报歧义，绝不猜
+      {
+        makeInstall(rootB, "WorkBuddy.exe");
+        const records = plat.parseUninstallRecords(
+          record("WorkBuddy", "WorkBuddy 5.7.6", `"${exeA}",0`, rootA)
+            + record("WorkBuddy-2", "WorkBuddy 5.7.6", `"${join(rootB, "WorkBuddy.exe")}",0`, rootB),
+        );
+        const outcome = plat.findElectronFromUninstallRecords(records, {
+          exeBasename: "workbuddy.exe",
+          displayNamePattern: /^WorkBuddy(?:\s+\d+(?:\.\d+)+)?$/u,
+          platform: "win32",
+        });
+        check(
+          "T10.28",
+          outcome.found === false && Array.isArray(outcome.ambiguous) && outcome.ambiguous.length === 2,
+          "两个合法候选 → ambiguous（宁可不猜，也不选错账号对应的 App）",
+        );
+      }
+
+      // 5) 布局不合格（DisplayIcon 指向卸载程序、且同目录没有该产品的合法布局）→ 全部被拒
+      {
+        const records = plat.parseUninstallRecords(record("WorkBuddy", "WorkBuddy 5.7.6", `"${bogus}",0`, undefined));
+        const outcome = plat.findElectronFromUninstallRecords(records, {
+          exeBasename: "workbuddy.exe",
+          displayNamePattern: /^WorkBuddy(?:\s+\d+(?:\.\d+)+)?$/u,
+          platform: "win32",
+        });
+        check(
+          "T10.29",
+          outcome.found === false && outcome.rejected > 0,
+          `布局校验拦下「DisplayIcon 指向卸载程序」的候选（rejected=${outcome.rejected}）`,
+        );
+      }
+
+      // 6) 产品隔离：国内版的 DisplayName 形状不得匹配国际版的记录（反之亦然）
+      {
+        const records = plat.parseUninstallRecords(record("WorkBuddyAI", "WorkBuddy AI 5.7.6", `"${exeA}",0`, rootA));
+        const asCn = plat.findElectronFromUninstallRecords(records, {
+          exeBasename: "workbuddy.exe",
+          displayNamePattern: plat.VARIANTS[0].electron.windowsDisplayNamePattern,
+          platform: "win32",
+        });
+        const asAi = plat.findElectronFromUninstallRecords(records, {
+          exeBasename: "workbuddyai.exe",
+          displayNamePattern: plat.VARIANTS[1].electron.windowsDisplayNamePattern,
+          platform: "win32",
+        });
+        check(
+          "T10.30",
+          asCn.found === false && asAi.found === false,
+          "两个产品的 DisplayName 形状互不匹配（不会把国内版误当国际版，反之亦然）",
+        );
+      }
+
+      // 7) 注入 runner：命中 + 查询按进程只跑一轮（这是同步 available() 的成本护栏）
+      {
+        plat.resetUninstallRecordsCache();
+        let calls = 0;
+        const runner = (root) => {
+          calls += 1;
+          return root.includes("HKCU")
+            ? record("WorkBuddy", "WorkBuddy 5.7.6", `"${exeA}",0`, rootA)
+            : "";
+        };
+        const first = plat.resolveElectronFromRegistry(plat.VARIANTS[0], {}, { registryRunner: runner, platform: "win32" });
+        const callsAfterFirst = calls;
+        const second = plat.resolveElectronFromRegistry(plat.VARIANTS[0], {}, { registryRunner: runner, platform: "win32" });
+        check(
+          "T10.31",
+          first === exeA && second === exeA && callsAfterFirst === plat.WINDOWS_UNINSTALL_ROOTS.length && calls === callsAfterFirst,
+          `注册表发现命中且只查询一轮（${callsAfterFirst} 根 → 第二次复用缓存）`,
+        );
+        plat.resetUninstallRecordsCache();
+      }
+
+      // 8) 定位顺序：显式环境变量优先于注册表（用户覆盖永远最大）
+      {
+        plat.resetUninstallRecordsCache();
+        const override = join(tmp, "override.exe");
+        writeFileSync(override, "");
+        const picked = plat.resolveElectronBinary(
+          plat.VARIANTS[0],
+          { WORKBUDDY_ELECTRON_BIN: override },
+          { registryRunner: () => record("WorkBuddy", "WorkBuddy 5.7.6", `"${exeA}",0`, rootA), platform: "win32" },
+        );
+        check(
+          "T10.32",
+          picked === override,
+          "定位顺序：显式 WORKBUDDY_ELECTRON_BIN 优先于注册表发现",
+        );
+        plat.resetUninstallRecordsCache();
+      }
+    } finally {
+      try { rmSync(tmp, { recursive: true, force: true }); } catch {}
+    }
+  }
+}
+
+// ── T11 区域绑定与「拒绝混用」（v0.3.0 的核心不变量） ──
+// 背景：国内版与国际版是**两套账号、两套积分**，甚至可以把凭据写进同一个目录。
+// 因此插件必须（a）只服务被绑定的那一版，（b）绝不跨版回落。这一组把这两条钉住。
+section("T11 区域绑定与「拒绝混用」");
+{
+  const tmp = mkdtempSync(join(tmpdir(), "dsh-wb-bind-"));
+  try {
+    const write = (name, obj) => {
+      const path = join(tmp, name);
+      writeFileSync(path, JSON.stringify(obj));
+      return path;
+    };
+    const missingPath = join(tmp, "nope.info");
+    const plainCn = write("cn-plain.info", {
+      auth: { accessToken: "cn-token", refreshToken: "cn-refresh", domain: "www.workbuddy.cn" },
+      account: { uid: "u-cn" },
+    });
+    const plainAi = write("ai-plain.info", {
+      auth: { accessToken: "ai-token", refreshToken: "ai-refresh", domain: "www.workbuddy.ai" },
+      account: { uid: "u-ai" },
+    });
+    // 一个形状合法的 $wbEncrypted 信封（不需要能真的解开：这里只验证「形态识别」）
+    const envelope = Buffer.from(JSON.stringify({
+      suite: 1,
+      keyId: Buffer.alloc(8, 5).toString("hex"),
+      nonce: Buffer.alloc(12, 5).toString("base64"),
+      authTag: Buffer.alloc(16, 5).toString("base64"),
+      ciphertext: Buffer.alloc(8, 5).toString("base64"),
+    })).toString("base64");
+    const encCn = write("cn-enc.info", {
+      auth: { accessToken: { $wbEncrypted: 1, envelope }, refreshToken: { $wbEncrypted: 1, envelope } },
+      account: { uid: "u-cn" },
+    });
+
+    const [cnVariant, aiVariant] = [I.VARIANTS[0], I.VARIANTS[1]];
+    // 注入候选路径：平台默认布局读的是真实 homedir()，无法用 env 隔离，
+    // 所以「单变体隔离」这类行为只能靠显式候选路径做确定性验证。
+    const only = (cnPath, aiPath) => (variant) => (variant.region === "global" ? [aiPath] : [cnPath]);
+
+    check("T11.1", I.variantCredentialState(cnVariant, {}, { candidates: only(missingPath, missingPath) }) === "absent",
+      "无凭据文件 → absent");
+    check("T11.2", I.variantCredentialState(cnVariant, {}, { candidates: only(plainCn, missingPath) }) === "plain",
+      "明文 accessToken → plain");
+    check("T11.3", I.variantCredentialState(cnVariant, {}, { candidates: only(encCn, missingPath) }) === "encrypted",
+      "$wbEncrypted 信封 → encrypted");
+
+    // 显式指定区域：即使那一版没有凭据也照样选中（报错才会指对版本）
+    mod.configure({ region: "cn" });
+    check("T11.4", I.selectVariant({}, { candidates: only(missingPath, plainAi) })?.region === "cn",
+      "region=cn 显式指定 → 选中国内版（即使它没有凭据，也不改用国际版）");
+    mod.configure({ region: "global" });
+    check("T11.5", I.selectVariant({}, { candidates: only(plainCn, missingPath) })?.region === "global",
+      "region=global 显式指定 → 选中国际版（即使它没有凭据，也不改用国内版）");
+
+    // auto：选实际可用的那一版
+    mod.configure({});
+    check("T11.6", I.selectVariant({}, { candidates: only(plainCn, missingPath) })?.region === "cn",
+      "auto + 只有国内版有凭据 → cn");
+    check("T11.7", I.selectVariant({}, { candidates: only(missingPath, plainAi) })?.region === "global",
+      "auto + 只有国际版有凭据 → global");
+    check("T11.8", I.selectVariant({}, { candidates: only(plainCn, plainAi) })?.region === "global",
+      "auto + 两版都有凭据 → global（按 AUTO_REGION_ORDER，保持 v0.2.x 的额度归属）");
+    check("T11.9", I.selectVariant({}, { candidates: only(missingPath, missingPath) }) === undefined,
+      "auto + 两版都没有凭据 → undefined（不绑定，容忍「先装插件后登录」）");
+    check("T11.10", I.selectVariant({}, { candidates: only(plainCn, encCn) })?.region === "cn",
+      "auto + 国内版明文、国际版加密 → 选国内版（「确定能用」优先于「也许能解开」）");
+    check(
+      "T11.11",
+      I.selectVariant({}, { candidates: only(encCn, encCn), registry: false })?.region === "global",
+      "auto + 两版都只有加密凭据且都解不开 → 按顺序取 global（好让 search() 给出解密指引）",
+    );
+
+    // 绑定是粘性的：环境变化不改绑（这是「不漂移到另一个账号」的实现点）
+    I.resetBinding();
+    const bound1 = I.bindVariant({}, { candidates: only(plainCn, missingPath) });
+    const bound2 = I.bindVariant({}, { candidates: only(missingPath, plainAi) });
+    check("T11.12", bound1?.region === "cn" && bound2?.region === "cn" && I.getLastRegion() === "cn",
+      "绑定是粘性的：第二次调用即便国际版可用，也不会改绑");
+    I.resetBinding();
+
+    // 拒绝混用：读到另一版的凭据必须报错，而不是静默换账号
+    check(
+      "T11.13",
+      I.regionMismatch(cnVariant, { domain: "www.workbuddy.ai" }) === true
+        && I.regionMismatch(aiVariant, { domain: "www.workbuddy.ai" }) === false
+        && I.regionMismatch(cnVariant, { domain: "" }) === false,
+      "regionMismatch：跨版为真、同版为假、空域名放行（落盘形态差异不算跨版）",
+    );
+    let mismatchErr;
+    try {
+      await I.resolveCredentialForVariant({ variant: cnVariant, env: {}, candidates: [plainAi] });
+    } catch (e) { mismatchErr = e; }
+    check(
+      "T11.14",
+      String(mismatchErr?.code ?? "") === "WB_SEARCH_CREDENTIAL_REGION_MISMATCH",
+      `国内版候选位读到国际版凭据 → 抛 REGION_MISMATCH（实际 ${mismatchErr?.code ?? "未抛"}）`,
+    );
+    const okCred = await I.resolveCredentialForVariant({ variant: cnVariant, env: {}, candidates: [plainCn] });
+    check(
+      "T11.15",
+      okCred?.accessToken === "cn-token" && okCred?.variant?.region === "cn",
+      "同版凭据正常返回（不误伤）",
+    );
+
+    // 源码级护栏：resolveCredential 不得再出现「排序后逐个试」的跨版回落写法
+    {
+      const src = readFileSync(join(root, "lib", "index.js"), "utf8");
+      const body = src.slice(src.indexOf("async function resolveCredential("));
+      const scoped = /currentVariant\(\)/.test(body);
+      const ranked = /AUTO_REGION_ORDER[\s\S]{0,80}sort\(/.test(src) || /firstError/.test(body);
+      check(
+        "T11.16",
+        scoped && !ranked,
+        "resolveCredential 只在被绑定那一版里找（源码级断言，防「跨版回落」被写回来）",
+      );
+    }
+  } finally {
+    try { rmSync(tmp, { recursive: true, force: true }); } catch {}
+  }
+  mod.configure({});
+  I.resetBinding();
 }
 
 // ── 汇总 ──

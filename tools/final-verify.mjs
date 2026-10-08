@@ -11,7 +11,7 @@
  * 用法：
  *   node final-verify.mjs
  * 可选环境变量：
- *   WORKBUDDY_SEARCH_REGION=global|cn
+ *   WORKBUDDY_SEARCH_REGION=auto|global|cn   （默认 auto：选实际可用的那一版）
  *   WORKBUDDY_AI_ELECTRON_BIN / WORKBUDDY_ELECTRON_BIN
  *   WORKBUDDY_AUTH_FILE / WORKBUDDY_AI_AUTH_FILE
  */
@@ -21,7 +21,7 @@ const say = (k, v) => console.log(`${k.padEnd(16)}=`, v);
 
 say("AI_ELECTRON_BIN", process.env.WORKBUDDY_AI_ELECTRON_BIN ?? "(未设)");
 say("SEARCH_REGION", process.env.WORKBUDDY_SEARCH_REGION ?? "(未设)");
-say("preferredRegion", __internals.preferredRegion());
+say("regionSetting", __internals.regionSetting());
 
 // 统一入口：connect 可用则复用，否则回落自带实现（零硬依赖的关键）。
 const cred = await __internals.resolveCredential();
@@ -34,6 +34,7 @@ if (cred === undefined) {
 }
 
 say("source", __internals.getLastCredentialSource?.() ?? "(未知)");
+say("boundRegion", __internals.getLastRegion?.() ?? "(未绑定)");
 say("variant", cred.variant?.id);
 say("region", cred.variant?.region);
 say("domain", cred.domain);
