@@ -42,7 +42,7 @@ profile 的 `cordis.patch.yml` 里以插件 **id**（不是包名）固化凭据
 - id: web-workbuddy-websearch      # loader 里的真实 id，写错会 "entry not found"
   name: "dsh-workbuddy-websearch"
   config:
-    region: global                 # global=国际版 · cn=国内版
+    region: auto                   # auto=选实际可用的那一版（默认）· cn=强制国内版 · global=强制国际版
     aiElectronBin: "<WorkBuddy AI 安装目录>\\WorkBuddyAI.exe"
     cnElectronBin: "<WorkBuddy 安装目录>\\WorkBuddy.exe"
 ```
@@ -67,31 +67,41 @@ DSH_HOME="<DSH_HOME>" \
 ```bash
 cd <profile>/node_modules/dsh-workbuddy-websearch/tools
 DSH_HOME="<DSH_HOME>" \
+  node final-verify.mjs
+```
+
+成功样例输出（`region: auto`，插件自行选中了实际可用的那一版）：
+
+```
+regionSetting = auto
+boundRegion = cn
+variant = workbuddy | region = cn | domain = www.workbuddy.cn
+chatBase = https://copilot.tencent.com
+SEARCH OK | sources = 20 | contentLen = 39896
+```
+
+要强制某一版（例如另一版未装 Electron 二进制时），显式给出它的二进制：
+
+```bash
 WORKBUDDY_SEARCH_REGION=global \
 WORKBUDDY_AI_ELECTRON_BIN="<WorkBuddy AI 安装目录>/WorkBuddyAI.exe" \
   node final-verify.mjs
 ```
 
-成功样例输出：
-
-```
-preferredRegion = global
-variant = workbuddy-ai | region = global | domain = www.workbuddy.ai
-chatBase = https://www.workbuddy.ai
-SEARCH OK | sources = 20 | contentLen = 39896
-```
-
 ## 版本切换（国内 / 国际）
 
-- 国际版：`cordis.patch.yml` 里 `region: global`（默认）。
-- 国内版：改成 `region: cn`，或临时 `set WORKBUDDY_SEARCH_REGION=cn` 再启动。
+- **默认 `auto`**：插件在首次用到时绑定**实际可用**的那一版，整个会话不再切换；
+  只装了一版的人无需任何配置。
+- 两版都可用时取**国际版**（保持 0.2.x 的额度归属）；想固定国内版：
+  `cordis.patch.yml` 里写 `region: cn`，或临时 `set WORKBUDDY_SEARCH_REGION=cn` 再启动。
+- 显式指定后**不会**改用另一版：那一版没登录就如实报错 —— 避免扣错账号。
 
 ## 依赖
 
 - 运行时：`node >= 20`（dsh 自带 node 24）。
 - 软依赖：`dsh-workbuddy-connect >= 0.5.4`（用于解密 5.6+ 加密凭据、双版本凭据解析、
-  内存续期）。**未安装也能完整工作**——插件自带平台定位、解密与凭据读取，退回
-  「明文只读」兜底路径（仅国内版旧格式）；装了则优先复用 connect 的实现。
+  内存续期）。**未安装也能完整工作**——插件自带平台定位、解密与凭据读取；
+  装了则优先复用 connect 的实现（它抛错时自动降级到自带路径）。
 - 宿主接缝：`@deepseek-ai/dsh-web` 的 `ctx.web.registerSearchProvider`。
 
 ## 发布到 GitHub

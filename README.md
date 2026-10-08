@@ -144,7 +144,7 @@ dsh headless "帮我搜一下最近的 XX 进展"
 
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
-| `WORKBUDDY_SEARCH_REGION` | `global` | 期望账号区域：`global`（国际版）/ `cn`（国内版） |
+| `WORKBUDDY_SEARCH_REGION` | `auto` | 用哪一版账号：`auto`（选实际可用的那一版）/ `global`（国际版 WorkBuddy AI）/ `cn`（国内版 WorkBuddy） |
 | `WORKBUDDY_SEARCH_MODE` | `2` | 云端 search_mode（2 = PRO，桌面 App 同款） |
 | `WORKBUDDY_SEARCH_MAX_CONTENT_CHARS` | `30000` | 综述回传上限字符，`0` = 不截断 |
 | `WORKBUDDY_SEARCH_ENDPOINT` | 按区域自动 | 覆盖网关地址 |
@@ -153,13 +153,25 @@ dsh headless "帮我搜一下最近的 XX 进展"
 | `WORKBUDDY_ELECTRON_BIN` | 自动探测 | 国内版 App 的 Electron 二进制（解密 5.6+ 凭据用） |
 | `WORKBUDDY_AI_ELECTRON_BIN` | 自动探测 | 国际版 App 的 Electron 二进制（**装在自选盘符/自定义路径时必填**） |
 
+> **两版账号不会混用。** 国内版（WorkBuddy）与国际版（WorkBuddy AI）是两套账号、
+> 两套积分。插件在首次用到时**绑定其中一版**，整个会话不再切换；被绑定的那一版
+> 没登录就如实报错，**不会**悄悄改用另一版去扣费。
+>
+> `auto`（默认）选**实际可用的那一版**，只装了一版的人无需任何配置；两版都可用时
+> 取国际版（保持 0.2.x 的额度归属），想固定用国内版就写 `region: cn`。
+> 详见 [COMPATIBILITY.md](./COMPATIBILITY.md) §4.2。
+
 > **自动探测顺序**：① 上面的环境变量 → ② 平台默认布局
 > （Windows 国内版 `%LOCALAPPDATA%\Programs\WorkBuddy\`；macOS `/Applications/*.app`）
 > → ③ Windows 常见安装根的**一层有界扫描**（`%LOCALAPPDATA%\Programs`、`%ProgramFiles%*` 下
-> 目录名以 `WorkBuddy` 开头的；**不枚举盘符、不做全盘遍历**）。
+> 目录名以 `WorkBuddy` 开头的；**不枚举盘符、不做全盘遍历**）
+> → ④ **Windows 卸载注册表**（`Uninstall` 三处根；`DisplayName` 形状匹配后取
+> `DisplayIcon` / `InstallLocation`，每个候选都要通过「exe 名相符 + 同级 `version` +
+> `resources/app.asar`」三道布局校验；多于一个就报歧义，**绝不猜**）。
 >
-> ❗ 官方安装器允许把 App 装到**自选盘符或自定义目录**，这种情况**不会被自动发现**，
-> 请用环境变量显式指定。找不到时插件抛出的错误里已包含**可直接粘贴**的设置命令。
+> ❗ 官方安装器允许把 App 装到**自选盘符或自定义目录**。第 ④ 步覆盖了实机上最常见的
+> 「装在自选盘符」「两版装进同一个目录」两种情形；万一仍找不到，请用环境变量显式指定。
+> 找不到时插件抛出的错误里已包含**可直接粘贴**的设置命令。
 > 详见 [COMPATIBILITY.md](./COMPATIBILITY.md) §4.1。
 
 ## 适用范围
@@ -245,6 +257,7 @@ dsh headless "帮我搜一下最近的 XX 进展"
 
 | 版本 | 要点 |
 |---|---|
+| **0.3.0** | **区域绑定**：`region` 默认 `auto`（选实际可用的那一版），首次用到时绑定一版、整会话不切换；取消跨版静默回落（不再悄悄改用另一版扣费）；新增 **Windows 卸载注册表发现**，覆盖「两版装在同一目录」「装在自选盘符」 |
 | **0.2.6** | 文档按读者分层：安装拆成「快速开始」与「遇到问题」，开发态细节移入 DEVELOPING.md；新增本变更记录 |
 | **0.2.5** | 冲突提示改为通用表述（不再点名具体插件）；安装文档去本机化；修正测试降级判据（环境差异不再误判为缺陷） |
 | **0.2.4** | 修复三个真实缺陷：5.6+ 加密凭据解不开、Windows 缺 Electron 自动发现、connect 可能复用过期凭据 |
@@ -279,7 +292,7 @@ Electron 二进制定位策略，都源自该项目的逆向与验证工作（MI
 
 | 文档 | 用途 |
 |---|---|
-| **[TESTING.md](./TESTING.md)** | 测试体系与发布回环：场景地图、三层套件（T1–T10 / S1–S9 / G1–G9）、发布流程。**改代码前先读它。** |
+| **[TESTING.md](./TESTING.md)** | 测试体系与发布回环：场景地图、三层套件（T1–T11 / S1–S9 / G1–G9）、发布流程。**改代码前先读它。** |
 | **[DEVELOPING.md](./DEVELOPING.md)** | 本地联调环境（junction 挂载、`--dump-config` 核验）、实现要点与安装排障。 |
 | **[COMPATIBILITY.md](./COMPATIBILITY.md)** | 兼容矩阵与逐条实测依据。 |
 | **[NORM-COMPLIANCE.md](./NORM-COMPLIANCE.md)** | 与 dsh 官方规范的符合性审计（源码级证据），以及「哪些要改、哪些故意不改」。 |

@@ -37,7 +37,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 | 2 | **凭据** | 没登录 / 登录了但文件读不到 / 两版（国内、国际）搞混 / 加密凭据 | T3、T9、S4、S5 |
 | 3 | **运行** | 正常搜索、区域切换、超长 query、并发、引用来源 | T5、T6、S6、T7 |
 | 4 | **异常** | 空 query、断网、500、401、流中断、坏 JSON、用户中止 | **S1、S2、S3、S6** |
-| 5 | **跨环境** | Windows / macOS、CPU 架构、有/无 connect | T9、T10、S5 |
+| 5 | **跨环境** | Windows / macOS、CPU 架构、有/无 connect | T9、T10、T11、S5 |
 
 **第 4 段（异常）是历史上最大的盲区**：`regression.mjs` 只覆盖正常路径，用户报的 bug 却几乎全在异常路径上。`scenarios.mjs` 就是为此而建。
 
@@ -45,7 +45,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 
 ## 2. 三层套件的分工
 
-### 2.1 `tools/regression.mjs` — 正常路径 + 契约（T1–T10，87 项）
+### 2.1 `tools/regression.mjs` — 正常路径 + 契约（T1–T11；源态 113 项 / 安装态 116 项）
 
 被测对象：**已安装的插件实体目录**（`link:` junction 或 `.tgz` 解包后的目录均算）。
 无凭据时会自动把 T3/T5 降级为 `WARN`，因此 CI 上恒可跑。
@@ -61,7 +61,8 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 | T7 | 错误路径 | 空 query 报错码、`available()` 返回布尔、abort 码 |
 | T8 | 边界 | 重复导入、`__internals` 齐全、候选路径含国际版 |
 | T9 | 零依赖自足 | 三个自带模块可独立加载、只依赖 `node:` 与相对路径、AES 往返；**key helper 的绑定契约（T9.15/T9.16 源码断言：必须是 `_linkedBinding("electron_browser_workbuddy_storage").loggerGet()`）**、真实载荷形状兼容（T9.17/T9.18）、**provider id 冲突的可操作报错（T9.19/T9.20/T9.21：带冲突 id + 给出排查步骤 + 不点名任何具体插件）** |
-| T10 | 平台覆盖 | win32/darwin 候选路径、cpu 约束、**Windows 安装根有界扫描（T10.13–T10.23：命中 per-user / 系统级 / 目录名变体，缺失不误报，重叠根去重，非法入参不抛，env 显式优先，以及「已接线」静态断言）**、真实二进制探测（T10.24，仅 win32） |
+| T10 | 平台覆盖 | win32/darwin 候选路径、cpu 约束、**Windows 安装根有界扫描（T10.13–T10.23）**、真实二进制探测（T10.24，仅 win32）、**卸载注册表发现（T10.25–T10.32：`DisplayIcon` 三形态、只取三个值名、单候选命中、多候选报歧义、布局校验拦截、产品形状互不匹配、按进程只查一轮、env 优先于注册表）** |
+| T11 | 区域绑定 | 凭据形态识别（absent/plain/encrypted）、`auto` 选定规则、显式指定的强约束、**绑定粘性**、跨版凭据拒绝（`WB_SEARCH_CREDENTIAL_REGION_MISMATCH`）、`available()` 只看绑定那一版，以及「不跨版回落」的源码级断言 |
 
 > **为什么 T9.15/T9.16 是源码断言而不是行为测试**：key helper 是**另一个进程**里跑的私有绑定调用，
 > 本进程无法用自造密钥验证它。在真实 5.6.2 设备上实测发现，helper 曾把绑定名写成

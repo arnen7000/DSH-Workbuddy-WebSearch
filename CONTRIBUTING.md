@@ -14,7 +14,7 @@
 
 ```bash
 # 1. 先跑一遍现有测试，确认基线是绿的
-node tools/regression.mjs "<已安装插件目录>"   # T1–T10 正常路径 + 契约
+node tools/regression.mjs "<已安装插件目录>"   # T1–T11 正常路径 + 契约
 node tools/scenarios.mjs  "<插件目录>"          # S1–S9 异常路径 + 接管范围 + 体系自检
 
 # 2. 改代码前：先加一条会在旧代码上 FAIL 的 check（复现问题）
