@@ -80,7 +80,7 @@ CODE_OF_CONDUCT.md                           # Contributor Covenant v2.1
 .github/ISSUE_TEMPLATE/feature_request.yml   # 功能请求表单（6 项，含"不接管抓取"提示）
 .github/ISSUE_TEMPLATE/config.yml            # 关闭空白 Issue，引导先读文档
 .github/dependabot.yml                       # 只盯 GitHub Actions
-tools/check-github-meta.mjs                  # GitHub 元数据自检（G1–G9，33 项）
+tools/check-github-meta.mjs                  # GitHub 元数据自检（G1–G9，38 项）
 ```
 
 **改动文件**
@@ -163,15 +163,47 @@ tools/check-github-meta.mjs                  # GitHub 元数据自检（G1–G9�
 
 创建 GitHub 仓库后，逐条设置：
 
-1. **Repository name**：`dsh-workbuddy-websearch`
+1. **Repository name**：`DSH-Workbuddy-WebSearch`（GitHub 的仓库地址大小写不敏感，但
+   `package.json` 里必须写这个**规范大小写**——见 §6.1）
 2. **Description**（对应清单第 1 项）：**必须与 `package.json` 的 `description`、README 简介
    三处同文**（见 §9 硬约束 1），当前为
    `将 WorkBuddy 桌面 App 的网络搜索接入 DeepSeek Harness 的 web_search 工具（零配置、零硬依赖）`
-3. **Topics**（提升可发现性）：`dsh` `deepseek-harness` `deepseek` `workbuddy` `web-search` `plugin`
+3. **Topics**（提升可发现性）：`dsh` `deepseek-harness` `deepseek` `workbuddy` `web-search` `plugin` `dsh-plugin`
 4. **LICENSE**：仓库已含 `LICENSE`（MIT），GitHub 会自动识别
-5. **Releases**：打完 tag 后建 Release（把 `package.json` 的 `versionNote` 摘要贴进去）
+5. **Releases**：打完 tag 后建 Release（把 `package.json` 的 `versionNote` 摘要贴进去）。
+   建 Release 会**自动触发 `publish.yml` 发布到 npm**——见 §6.1
 6. **Security → Report a vulnerability**：建议开启私密漏洞报告入口（`SECURITY.md` 里引用了它）
 7. **Community Standards**：设置完上面几项后，去 Insights → Community Standards 复核是否全绿
+8. **npm 可信发布（Trusted Publisher）**：见 §6.1。**只做一次**，之后发版不再需要任何 token
+
+### 6.1 npm 可信发布（Trusted Publisher）
+
+发布走 OIDC，**不需要任何 GitHub Secret、不需要长期 npm token**。前提是在 npm 侧把本仓库
+登记为可信发布者，否则 `publish.yml` 会以 `ENEEDAUTH` 失败。
+
+路径：**npmjs.com → Packages → `dsh-workbuddy-websearch` → Settings → Trusted publishing
+→ Add trusted publisher → GitHub Actions**
+
+| 字段 | 填什么 | 注意 |
+|---|---|---|
+| **Organization or user** | `arnen7000` | 区分大小写 |
+| **Repository** | `DSH-Workbuddy-WebSearch` | 区分大小写，用**规范大小写** |
+| **Workflow filename** | `publish.yml` | 只填文件名、不含路径；必须带 `.yml` |
+| **Environment name** | 留空 | 本仓库不使用 GitHub environments |
+| **Allowed actions** | ✅ 勾上 **`npm publish`** | `npm stage publish` 默认就允许；**不勾 `npm publish`，本工作流会失败** |
+
+四条容易踩的规则（均出自 npm 官方文档）：
+
+- **`package.json` 的 `repository.url` 必须与仓库地址完全一致**，否则可信发布不认。
+  本仓库写的是 `git+https://github.com/arnen7000/DSH-Workbuddy-WebSearch.git` —— 注意是
+  **规范大小写**，不是全小写。改这一行时别顺手「统一成小写」。
+- npm **保存配置时不校验任何字段**，填错只会在真正发布时才报错。填完请逐字核对。
+- 新建的可信发布配置**必须在 2 天内完成首次成功发布**，否则失效、需删掉重建。
+  换言之：**先把 `publish.yml` 推上去、配置好，再建 Release**。
+- 一个连接创建后**不能修改**（provider 与必填字段都固定），要改只能删了重建。
+
+> 配好之后建议在 npm 的 Publishing access 里选「要求 2FA 并禁用传统 token」，
+> 长期 token 就彻底没有用武之地了。
 
 ---
 
@@ -189,13 +221,13 @@ node tools/check-github-meta.mjs "$PWD"
 | G2 | PR 模板与两份 Issue 模板是否存在 |
 | G3 | Issue Forms 结构是否合法（`name`/`description`/`body`+`type`） |
 | G4 | Dependabot 结构合法，且只盯 `github-actions` |
-| G5 | CI 最小权限 + 关键步骤接线（含本脚本自身） |
+| G5 | CI 最小权限 + 关键步骤接线（含本脚本自身）；发布工作流的可信发布（OIDC）契约：`id-token: write`、Release 触发、官方 registry、不得注入长期 token、发布前接线三套检查 |
 | G6 | 占位符提示（`<your-gh-user>` / `OWNER/REPO` / TODO 邮箱）——**只 WARN 不阻断** |
 | G7 | 发布面精简（`CREDITS.md` ≤ 6000 bytes、`.local/` 必须被忽略、完整版留在本地） |
 | G8 | **本机信息零泄露**——遍历全部文本文件，禁止本机路径 / 用户名 / 本机目录名 / 本机专属的 dsh 数据目录命名 / 本机专属包名（违规即 FAIL） |
 | G9 | **时间信息分级**——日级 ISO 日期仅白名单允许，只留"基本时间信息"（违规即 FAIL） |
 
-当前：**33 PASS / 0 FAIL / 0 WARN**。
+当前：**38 PASS / 0 FAIL / 0 WARN**。
 
 ---
 
@@ -208,8 +240,8 @@ node tools/check-github-meta.mjs "$PWD"
 | 替换仓库 URL 占位符 | ✅ `package.json`（3 处）、`DEVELOPING.md`（2 处）、`.github/ISSUE_TEMPLATE/config.yml`（3 条 contact_links）、`bug_report.yml`（1 条链接）→ 全部指向 `github.com/arnen7000/dsh-workbuddy-websearch` |
 | 填写联系邮箱 | ✅ `SECURITY.md` + `CODE_OF_CONDUCT.md` → `arnen@126.com` |
 | **清除本机信息** | ✅ 见下 |
-| 自检 | ✅ `node tools/check-github-meta.mjs "$PWD"` → 33 PASS / 0 FAIL / 0 WARN |
-| 推送 | ⏳ 见下（远端仓库已改名为全小写 `dsh-workbuddy-websearch`） |
+| 自检 | ✅ `node tools/check-github-meta.mjs "$PWD"` → 38 PASS / 0 FAIL / 0 WARN |
+| 推送 | ⏳ 见下（远端仓库名为 `arnen7000/DSH-Workbuddy-WebSearch`；GitHub 的仓库地址大小写不敏感，两种写法都能解析到同一仓库，但 `package.json` 必须写规范大小写——见 §6.1） |
 
 ### 8.1 本机信息清理明细
 
@@ -316,7 +348,7 @@ node tools/check-github-meta.mjs "$PWD"
 **改动 README 后的必做动作**
 
 ```bash
-node tools/check-github-meta.mjs "$PWD"   # G1–G9，33 项
+node tools/check-github-meta.mjs "$PWD"   # G1–G9，38 项
 node tools/regression.mjs "$PWD"          # T1–T11
 node tools/scenarios.mjs "$PWD"           # S1–S9
 node .local/check-links.mjs "$PWD"        # L1–L4（L4 = README 目录完整性，最易被漏）

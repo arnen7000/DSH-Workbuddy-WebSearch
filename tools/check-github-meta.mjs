@@ -10,7 +10,8 @@
  *   G2 Issue 模板与 PR 模板存在
  *   G3 Issue Forms 结构合法（GitHub 要求 name / description / body，body 项必须有 type）
  *   G4 Dependabot 配置合法（version: 2 + updates 数组 + 每项有 package-ecosystem/directory/schedule）
- *   G5 CI 工作流最小权限（permissions 存在）与关键步骤接线
+ *   G5 CI 工作流最小权限（permissions 存在）与关键步骤接线；发布工作流的
+ *      可信发布（OIDC）契约：id-token、触发方式、registry、不得注入长期 token
  *   G6 仓库占位符检查（<your-gh-user> / OWNER/REPO 尚未替换时给出提示，不判 FAIL）
  *   G7 发布面精简（长文留本地 .local/，对外只留简短版）
  *   G8 **本机信息泄露检查**（对外仓库任何文件都不得出现本机路径 / 用户名 / 本机目录名 /
@@ -144,6 +145,32 @@ console.log(`\nG5  CI 工作流（安全加固 + 接线）`);
     check("G5.3", "CI 已接线 scenarios 套件", ci.includes("scenarios.mjs"));
     check("G5.4", "CI 已接线文档存在性检查（TESTING/NORM-COMPLIANCE）", ci.includes("Docs present"));
     check("G5.5", "CI 已接线本脚本（github-meta 自检）", ci.includes("check-github-meta.mjs"));
+  }
+
+  // 发布工作流：可信发布（OIDC）的关键契约。这几条任何一条悄悄失效，
+  // 后果都是「发布时才炸」—— 所以必须在离线自检里钉住。
+  //
+  // ⚠️ 断言前必须先剥掉整行注释：本工作流的注释里就写着 `id-token: write`
+  // 和 registry.npmjs.org，直接对原文做正则会让检查恒真（变异测试抓到过）。
+  const uncomment = (s) => s.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
+  const pub = read(".github/workflows/publish.yml");
+  if (pub === undefined) {
+    check("G5.6", "publish.yml 存在（可信发布工作流）", false);
+  } else {
+    const code = uncomment(pub);
+    check("G5.6", "publish.yml 声明 id-token: write（可信发布硬要求，缺了会 ENEEDAUTH）", /^\s*id-token:\s*write\s*$/m.test(code));
+    check("G5.7", "publish.yml 由 Release 发布触发", /^\s*release:\s*$[\s\S]{0,80}?^\s*types:\s*\[published\]\s*$/m.test(code));
+    check("G5.8", "publish.yml 指向官方 registry", /^\s*registry-url:\s*https:\/\/registry\.npmjs\.org\s*$/m.test(code));
+    // 反向断言：不得注入长期 token。注意代码里本来就出现了这两个变量名
+    // （那段是「确认未注入」的守卫步骤），所以要匹配「赋值为 GitHub secret」
+    // 而不是「出现」。
+    check(
+      "G5.9",
+      "publish.yml 未注入长期 token（可信发布用 OIDC，不得回退成 token）",
+      !/NODE_AUTH_TOKEN:\s*\$\{\{/.test(code) && !/secrets\.\s*(NPM_TOKEN|NODE_AUTH_TOKEN)/.test(code),
+    );
+    check("G5.10", "publish.yml 发布前接线三套检查（失败即不发布）",
+      /regression\.mjs/.test(code) && /scenarios\.mjs/.test(code) && /check-github-meta\.mjs/.test(code));
   }
 }
 

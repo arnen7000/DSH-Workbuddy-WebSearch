@@ -104,7 +104,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 >
 > **S8 保护的是「体系化」这件事本身**：如果哪天有人删了 `TESTING.md`、或把套件从 CI 里摘掉，S8 会立刻红——防止「又回到每次重新推演」的状态。
 
-### 2.3 `tools/check-github-meta.mjs` — GitHub 元数据自检（G1–G9，33 项）
+### 2.3 `tools/check-github-meta.mjs` — GitHub 元数据自检（G1–G9，38 项）
 
 被测对象：**仓库根目录**。这一层不测插件运行时，而是测**仓库在 GitHub 上的"门面"是否齐备且格式合法**——
 缺文件只会掉勾，但 **Issue 表单格式错会让 GitHub 整份拒收**，所以要钉住。
@@ -115,13 +115,19 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 | G2 | 模板文件 | PR 模板 + Bug/功能请求两份 Issue 模板 |
 | G3 | Issue Forms 结构合法 | 必须有 `name`/`description`/`body`，且每个 body 项含 `type` |
 | G4 | Dependabot 配置合法 | `version: 2` + `updates` + `package-ecosystem`/`directory`/`schedule`；且只盯 `github-actions` |
-| G5 | CI 加固与接线 | 顶层 `permissions` 最小权限；已接线各套件与文档检查 |
+| G5 | CI 加固与接线 | 顶层 `permissions` 最小权限；已接线各套件与文档检查；**发布工作流的可信发布（OIDC）契约**：`id-token: write`、由 Release 触发、指向官方 registry、不得注入长期 token、发布前接线三套检查 |
 | G6 | 占位符提示 | `<your-gh-user>` / `OWNER/REPO` / TODO 邮箱 —— **只 WARN，不阻断** |
 | G7 | **发布面精简** | `CREDITS.md` 保持简短（≤6000 bytes）；`.local/` 被 gitignore（本地长文不进仓库） |
 | G8 | **本机信息零泄露** | 遍历仓库所有文本文件，禁止出现本机路径 / 用户名 / 本机目录名（见下） |
 | G9 | **时间信息分级** | 只留"基本时间信息"：日级 ISO 日期仅白名单允许，其余一律 FAIL（见下） |
 
 > 设计成 **WARN 不阻断** 是刻意的：仓库还没建时占位符必然存在，不该因此让 CI 变红。
+
+> ⚠️ **断言工作流文件时必须先剥掉整行注释。** 本仓库的 YAML 注释里会写
+> `id-token: write`、`registry.npmjs.org` 这类字面量（解释「为什么必须这样写」），
+> 直接对原文做正则会命中注释 → 检查变成恒真。这条是**变异测试抓出来的**：
+> 删掉真正的 `id-token: write` 后 G5.6 仍报 PASS。现在 G5.6–G5.10 一律先在
+> 去注释后的代码上断言，并用 `.local/mutate-publish.py` 验证过 5 条都敏感。
 
 **G8 是本仓库的硬红线**——本项目对外发布，任何文件都不允许出现机器相关信息：
 
@@ -202,8 +208,11 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 ④ 改代码    ── 只改到新 check 转绿
 ⑤ 再跑全套  ── 全绿
 ⑥ 文档同步  ── 错误码/新场景写进 COMPATIBILITY.md 的异常路径表(§9)与该场景专节
-⑦ 版本 + 打包 ── package.json 版本号 + versionNote，npm pack → dist/*.tgz
-⑧ CI 兜底   ── push / PR 自动跑，任何人改坏都会红
+⑦ 版本 + 打包 ── package.json 版本号 + versionNote（repository/homepage/bugs 必须与仓库名一致），
+               npm pack → dist/*.tgz
+⑧ 发布      ── 建 tag（v<版本>）+ GitHub Release → `publish.yml` 自动经 OIDC 发布到 npm
+               并在发布前重跑三套检查；tag 与 package.json 版本不一致会被工作流拒绝
+⑨ CI 兜底   ── push / PR 自动跑，任何人改坏都会红
 ```
 
 **这样做的收益**：第 ② 步写下的 check 会永久留在仓库里。下一次有人碰同一块代码，CI 立刻提醒——**不需要任何人再回忆「以前踩过这个坑」**。
@@ -249,6 +258,21 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 9. `npm pack --dry-run`。
 
 **后续可选增强**（尚未落地）：把 `--dump-config` 的检查做成一个 nightly job，用 `dsh` 快照镜像跑，从而把「安装阶段」也纳入自动化。目前该阶段仍是本地手工清单（§3）。
+
+### 6.1 `publish.yml` — 发布工作流（可信发布 / OIDC）
+
+`.github/workflows/publish.yml`（**Release 发布时**触发，也可手动触发；顶层 `permissions: contents: read` + `id-token: write`）：
+
+1. **版本一致性闸门** —— Release tag（去掉 `v`）必须等于 `package.json` 的 `version`，否则直接拒绝发布。防的是「tag 写 0.4.0、实际发出去 0.3.9」这类不可逆错误；
+2. **发布前跑三套检查** —— `regression.mjs` / `scenarios.mjs` / `check-github-meta.mjs`，任一失败即不发布；
+3. **确认未注入长期 token** —— 显式断言 `NODE_AUTH_TOKEN` / `NPM_TOKEN` 不存在，防止日后有人「顺手加回 token」，变成看起来在用 OIDC、其实在用长期凭据；
+4. `npm publish` —— 经 OIDC 换取短时发布令牌，自动生成 provenance 签名。
+
+> **不需要任何 GitHub Secret。** 这是刻意的：长期 token 会过期、会泄露、需要轮换，而 OIDC 每次由 GitHub 现签。
+> 代价是必须在 npmjs.com 的包设置里把本仓库登记为 Trusted Publisher（见 `GITHUB-SETUP.md`），且
+> **`package.json` 的 `repository.url` 必须与仓库地址完全一致**——这是官方文档的硬要求，写错只会在发布时才报错。
+
+> 上述 5 条契约都由 G5.6–G5.10 钉住，并由 `.local/mutate-publish.py` 验证过对破坏敏感。
 
 ---
 

@@ -1,0 +1,74 @@
+name: publish
+
+# 在 GitHub 上「发布 Release」即自动发布到 npm。
+#
+# 用 OIDC 可信发布（Trusted Publishing）：不依赖任何长期有效的 npm token，
+# 发布物自动附带 provenance 签名 —— 任何人都能验证「这个包确实由本仓库的这个
+# 工作流、从这个提交构建」。前提是在 npmjs.com 的包设置里把本仓库登记为
+# Trusted Publisher（见 GITHUB-SETUP.md）。
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# 最小权限：仓库内容只读 + 允许签发 OIDC 身份令牌。
+# `id-token: write` 是可信发布的硬要求，缺了会以 ENEEDAUTH 失败。
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # registry-url 必须指向官方 registry（可信发布只支持 registry.npmjs.org）。
+      # 刻意不开缓存：发布构建要的是可复现，不是快。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # 可信发布要求 npm CLI >= 11.5.1；显式升级，免得踩到 Node 自带的旧版。
+      - name: 升级 npm（可信发布要求 >= 11.5.1）
+        run: npm install -g npm@latest && npm --version
+
+      # 版本一致性闸门：Release tag 必须等于 package.json 的 version，
+      # 否则会出现「tag 写 0.4.0、实际发出去 0.3.9」这类不可逆的错误。
+      - name: 版本一致性闸门
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -eu
+          PKG="$(node -p "require('./package.json').version")"
+          TAG="${RELEASE_TAG#v}"
+          if [ "$PKG" != "$TAG" ]; then
+            echo "::error::package.json 的版本是 $PKG，Release tag 是 $TAG，两者不一致，拒绝发布。"
+            exit 1
+          fi
+          echo "版本一致：$PKG"
+
+      # 发布前跑三套检查，任一失败即不发布。
+      - name: 发布前跑三套检查
+        run: |
+          node tools/regression.mjs "$PWD"
+          node tools/scenarios.mjs "$PWD"
+          node tools/check-github-meta.mjs "$PWD"
+
+      # 可信发布不使用任何 token。这里显式确认环境里没有凭据，
+      # 免得日后有人加回 NODE_AUTH_TOKEN，变成「看起来在用 OIDC、其实在用长期 token」。
+      - name: 确认未注入长期 token
+        run: |
+          set -eu
+          test -z "${NODE_AUTH_TOKEN:-}" || { echo "::error::NODE_AUTH_TOKEN 不应存在（可信发布用 OIDC）"; exit 1; }
+          test -z "${NPM_TOKEN:-}" || { echo "::error::NPM_TOKEN 不应存在（可信发布用 OIDC）"; exit 1; }
+          echo "未发现长期 token，将使用 OIDC 身份发布。"
+
+      - name: 发布到 npm（OIDC，自动生成 provenance）
+        run: npm publish

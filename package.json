@@ -1,16 +1,16 @@
 {
   "name": "dsh-workbuddy-websearch",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "将 WorkBuddy 桌面 App 的网络搜索接入 DeepSeek Harness 的 web_search 工具（零配置、零硬依赖）",
-  "versionNote": "0.3.0：区域绑定 —— 把「两版 WorkBuddy」的选择做成一次绑定、不跨版回落。① region 设置改为三档 auto|global|cn，默认 auto：只装了一版的用户无需任何配置即可用；两版都可用时按 AUTO_REGION_ORDER 取 global，保持 v0.2.x 的额度归属不变。② 首次真正用到时绑定一版，整个会话不再切换 —— 避免 token 过期的瞬间请求漂移到另一个账号。③ 取消跨版静默回落：被绑定那一版没登录就如实报错，不再悄悄改用另一版扣费。④ 读到属于另一版的凭据时明确报错（WB_SEARCH_CREDENTIAL_REGION_MISMATCH），与 dsh-workbuddy-connect 的「拒绝混用」取向一致。⑤ 新增 Windows 卸载注册表发现（照 connect 的做法）：三处 Uninstall 根、DisplayName 形状匹配、每个候选都过 Electron 布局校验（exe 名相符 + 同级 version 形如 37.10.3-24 + resources/app.asar）、realpath 去重、多于一个就报歧义绝不猜；覆盖「两版装在同一目录」与「装在自选盘符」这两种此前完全无法自动发现的情形。⑥ available() 改为只看被绑定那一版（不再因为另一版目录里有一份无关文件就判为可用）。⑦ 测试：回归套件新增 T10.25–T10.32（注册表解析与发现，合成 reg query 输出，跨平台可跑）与 T11.1–T11.16（区域绑定、粘性、拒绝混用、源码级防回退）；T4 覆盖 auto 与别名写法；T5 改为按绑定区域做真实搜索并现场断言不跨版回落。",
+  "versionNote": "0.3.1：发布链路改走 npm 可信发布（Trusted Publishing / OIDC）。① package.json 的 repository / homepage / bugs 修正为仓库的规范大小写 —— npm 要求发布来源仓库与 package.json 的 repository.url 完全匹配，否则可信发布会失败。② 新增 .github/workflows/publish.yml：在 GitHub 上发布 Release 即自动经 OIDC 发布到 npm，不再依赖长期有效的 npm token；发布物自动附带 provenance 签名，任何人可验证它由哪个仓库、哪个工作流、哪个提交构建。③ 工作流内置三道闸门：Release tag 与 package.json 的版本必须一致、发布前先跑回归/场景/门面三套检查、显式确认环境里没有被注入长期 token。④ 运行时行为与 0.3.0 完全相同，无功能变更。",
   "author": "XingLang & WorkBuddy (小研)",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/arnen7000/dsh-workbuddy-websearch.git"
+    "url": "git+https://github.com/arnen7000/DSH-Workbuddy-WebSearch.git"
   },
-  "homepage": "https://github.com/arnen7000/dsh-workbuddy-websearch#readme",
+  "homepage": "https://github.com/arnen7000/DSH-Workbuddy-WebSearch#readme",
   "bugs": {
-    "url": "https://github.com/arnen7000/dsh-workbuddy-websearch/issues"
+    "url": "https://github.com/arnen7000/DSH-Workbuddy-WebSearch/issues"
   },
   "keywords": [
     "dsh-plugin",

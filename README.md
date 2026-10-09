@@ -45,13 +45,20 @@ WorkBuddy AI 任一）。
 
 ### 快速开始
 
-对**每一份** dsh 副本执行一次，用你平时启动 dsh 的方式调用它的 CLI：
+**从 npm 装（推荐）** —— 本插件已发布到 npm，不必 clone：
+
+```bash
+dsh plugin --profile web add dsh-workbuddy-websearch
+```
+
+**从源码装** —— 想改代码、或想固定到某个提交时：
 
 ```bash
 # <本插件目录>：你 clone 下来的仓库路径
 dsh plugin --profile web add <本插件目录>
 ```
 
+对**每一份** dsh 副本各执行一次，用你平时启动 dsh 的方式调用它的 CLI。
 **重启 dsh 即生效** —— `web_search` 走 WorkBuddy 搜索，模型回答里会带来源链接。
 
 核验（应看到 `searchProvider: workbuddy-agentic` 与 `id: web-workbuddy-websearch`）：
@@ -63,7 +70,14 @@ dsh --profile web --dump-config | grep -i "workbuddy-websearch\|searchProvider"
 若 `dsh` 不在 `PATH` 上，直接用它的绝对入口调用，效果相同：
 
 ```bash
-"<node>" "<dsh 安装根>/node_modules/@deepseek-ai/dsh/lib/bin.js" plugin --profile web add "<本插件目录>"
+"<node>" "<dsh 安装根>/node_modules/@deepseek-ai/dsh/lib/bin.js" plugin --profile web add dsh-workbuddy-websearch
+```
+
+**升级**（`plugin` 子命令就是 dsh 官方的插件管理入口）：
+
+```bash
+dsh plugin --profile web add dsh-workbuddy-websearch@latest   # 升到最新版
+dsh plugin --profile web add dsh-workbuddy-websearch@0.3.1    # 或固定到某一版
 ```
 
 ### 遇到问题
@@ -257,6 +271,7 @@ dsh headless "帮我搜一下最近的 XX 进展"
 
 | 版本 | 要点 |
 |---|---|
+| **0.3.1** | 发布链路改走 **npm 可信发布**（Trusted Publishing / OIDC）：在 GitHub 上发 Release 即自动发布，不再依赖长期 npm token，发布物附带 provenance 签名；修正 `package.json` 的仓库地址大小写（npm 要求与仓库完全一致）。**运行时行为与 0.3.0 相同** |
 | **0.3.0** | **区域绑定**：`region` 默认 `auto`（选实际可用的那一版），首次用到时绑定一版、整会话不切换；取消跨版静默回落（不再悄悄改用另一版扣费）；新增 **Windows 卸载注册表发现**，覆盖「两版装在同一目录」「装在自选盘符」 |
 | **0.2.6** | 文档按读者分层：安装拆成「快速开始」与「遇到问题」，开发态细节移入 DEVELOPING.md；新增本变更记录 |
 | **0.2.5** | 冲突提示改为通用表述（不再点名具体插件）；安装文档去本机化；修正测试降级判据（环境差异不再误判为缺陷） |
