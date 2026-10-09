@@ -80,7 +80,7 @@ CODE_OF_CONDUCT.md                           # Contributor Covenant v2.1
 .github/ISSUE_TEMPLATE/feature_request.yml   # 功能请求表单（6 项，含"不接管抓取"提示）
 .github/ISSUE_TEMPLATE/config.yml            # 关闭空白 Issue，引导先读文档
 .github/dependabot.yml                       # 只盯 GitHub Actions
-tools/check-github-meta.mjs                  # GitHub 元数据自检（G1–G9，38 项）
+tools/check-github-meta.mjs                  # GitHub 元数据自检（G1–G9，40 项）
 ```
 
 **改动文件**
@@ -221,13 +221,13 @@ node tools/check-github-meta.mjs "$PWD"
 | G2 | PR 模板与两份 Issue 模板是否存在 |
 | G3 | Issue Forms 结构是否合法（`name`/`description`/`body`+`type`） |
 | G4 | Dependabot 结构合法，且只盯 `github-actions` |
-| G5 | CI 最小权限 + 关键步骤接线（含本脚本自身）；发布工作流的可信发布（OIDC）契约：`id-token: write`、Release 触发、官方 registry、不得注入长期 token、发布前接线三套检查 |
+| G5 | CI 最小权限 + 关键步骤接线（含本脚本自身）；发布工作流的可信发布（OIDC）契约：`id-token: write`、Release 触发、官方 registry、不得注入长期 token、长期 token 闸门须放过 `actions/setup-node` 的占位值、显式确认 OIDC 通道可用、发布前接线三套检查 |
 | G6 | 占位符提示（`<your-gh-user>` / `OWNER/REPO` / TODO 邮箱）——**只 WARN 不阻断** |
 | G7 | 发布面精简（`CREDITS.md` ≤ 6000 bytes、`.local/` 必须被忽略、完整版留在本地） |
 | G8 | **本机信息零泄露**——遍历全部文本文件，禁止本机路径 / 用户名 / 本机目录名 / 本机专属的 dsh 数据目录命名 / 本机专属包名（违规即 FAIL） |
 | G9 | **时间信息分级**——日级 ISO 日期仅白名单允许，只留"基本时间信息"（违规即 FAIL） |
 
-当前：**38 PASS / 0 FAIL / 0 WARN**。
+当前：**40 PASS / 0 FAIL / 0 WARN**。
 
 ---
 
@@ -240,7 +240,7 @@ node tools/check-github-meta.mjs "$PWD"
 | 替换仓库 URL 占位符 | ✅ `package.json`（3 处）、`DEVELOPING.md`（2 处）、`.github/ISSUE_TEMPLATE/config.yml`（3 条 contact_links）、`bug_report.yml`（1 条链接）→ 全部指向 `github.com/arnen7000/dsh-workbuddy-websearch` |
 | 填写联系邮箱 | ✅ `SECURITY.md` + `CODE_OF_CONDUCT.md` → `arnen@126.com` |
 | **清除本机信息** | ✅ 见下 |
-| 自检 | ✅ `node tools/check-github-meta.mjs "$PWD"` → 38 PASS / 0 FAIL / 0 WARN |
+| 自检 | ✅ `node tools/check-github-meta.mjs "$PWD"` → 40 PASS / 0 FAIL / 0 WARN |
 | 推送 | ⏳ 见下（远端仓库名为 `arnen7000/DSH-Workbuddy-WebSearch`；GitHub 的仓库地址大小写不敏感，两种写法都能解析到同一仓库，但 `package.json` 必须写规范大小写——见 §6.1） |
 
 ### 8.1 本机信息清理明细
@@ -348,7 +348,7 @@ node tools/check-github-meta.mjs "$PWD"
 **改动 README 后的必做动作**
 
 ```bash
-node tools/check-github-meta.mjs "$PWD"   # G1–G9，38 项
+node tools/check-github-meta.mjs "$PWD"   # G1–G9，40 项
 node tools/regression.mjs "$PWD"          # T1–T11
 node tools/scenarios.mjs "$PWD"           # S1–S9
 node .local/check-links.mjs "$PWD"        # L1–L4（L4 = README 目录完整性，最易被漏）

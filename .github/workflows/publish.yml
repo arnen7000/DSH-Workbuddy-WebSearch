@@ -61,14 +61,34 @@ jobs:
           node tools/scenarios.mjs "$PWD"
           node tools/check-github-meta.mjs "$PWD"
 
-      # 可信发布不使用任何 token。这里显式确认环境里没有凭据，
+      # 可信发布不使用任何 token。这里显式确认环境里没有「真实」凭据，
       # 免得日后有人加回 NODE_AUTH_TOKEN，变成「看起来在用 OIDC、其实在用长期 token」。
-      - name: 确认未注入长期 token
+      #
+      # ⚠️ 必须放过 actions/setup-node 的占位值：一旦给了 registry-url，它会主动把
+      # NODE_AUTH_TOKEN 设成字面量 XXXXX-XXXXX-XXXXX-XXXXX（它自己的注释是
+      # "Set the token to a dummy value to avoid errors"），目的是让缺 token 的
+      # `npm install` 不报错。那是无害的占位值，不是凭据 —— 早期版本没放过它，
+      # 导致每次发布都在这一步误报失败。护栏 G5.11 钉住这条。
+      #
+      # 顺带确认 OIDC 身份令牌通道真的可用：`id-token: write` 若没生效，
+      # 与其让 `npm publish` 报难懂的 ENEEDAUTH，不如在这里直接说清楚。
+      - name: 确认未注入长期 token 且 OIDC 通道可用
         run: |
           set -eu
-          test -z "${NODE_AUTH_TOKEN:-}" || { echo "::error::NODE_AUTH_TOKEN 不应存在（可信发布用 OIDC）"; exit 1; }
-          test -z "${NPM_TOKEN:-}" || { echo "::error::NPM_TOKEN 不应存在（可信发布用 OIDC）"; exit 1; }
-          echo "未发现长期 token，将使用 OIDC 身份发布。"
+          PLACEHOLDER='XXXXX-XXXXX-XXXXX-XXXXX'
+          if [ -n "${NODE_AUTH_TOKEN:-}" ] && [ "${NODE_AUTH_TOKEN}" != "$PLACEHOLDER" ]; then
+            echo "::error::检测到真实的 NODE_AUTH_TOKEN —— 可信发布应走 OIDC，不应注入长期 token。"
+            exit 1
+          fi
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            echo "::error::NPM_TOKEN 不应存在（可信发布用 OIDC）。"
+            exit 1
+          fi
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "::error::缺少 ACTIONS_ID_TOKEN_REQUEST_URL —— id-token: write 未生效，无法走 OIDC。"
+            exit 1
+          fi
+          echo "未发现长期 token（setup-node 的占位值已忽略），OIDC 通道可用，将以 OIDC 身份发布。"
 
       - name: 发布到 npm（OIDC，自动生成 provenance）
         run: npm publish

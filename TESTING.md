@@ -104,7 +104,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 >
 > **S8 保护的是「体系化」这件事本身**：如果哪天有人删了 `TESTING.md`、或把套件从 CI 里摘掉，S8 会立刻红——防止「又回到每次重新推演」的状态。
 
-### 2.3 `tools/check-github-meta.mjs` — GitHub 元数据自检（G1–G9，38 项）
+### 2.3 `tools/check-github-meta.mjs` — GitHub 元数据自检（G1–G9，40 项）
 
 被测对象：**仓库根目录**。这一层不测插件运行时，而是测**仓库在 GitHub 上的"门面"是否齐备且格式合法**——
 缺文件只会掉勾，但 **Issue 表单格式错会让 GitHub 整份拒收**，所以要钉住。
@@ -115,7 +115,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 | G2 | 模板文件 | PR 模板 + Bug/功能请求两份 Issue 模板 |
 | G3 | Issue Forms 结构合法 | 必须有 `name`/`description`/`body`，且每个 body 项含 `type` |
 | G4 | Dependabot 配置合法 | `version: 2` + `updates` + `package-ecosystem`/`directory`/`schedule`；且只盯 `github-actions` |
-| G5 | CI 加固与接线 | 顶层 `permissions` 最小权限；已接线各套件与文档检查；**发布工作流的可信发布（OIDC）契约**：`id-token: write`、由 Release 触发、指向官方 registry、不得注入长期 token、发布前接线三套检查 |
+| G5 | CI 加固与接线 | 顶层 `permissions` 最小权限；已接线各套件与文档检查；**发布工作流的可信发布（OIDC）契约**：`id-token: write`、由 Release 触发、指向官方 registry、不得注入长期 token、长期 token 闸门须放过 `actions/setup-node` 的占位值、显式确认 OIDC 通道可用、发布前接线三套检查 |
 | G6 | 占位符提示 | `<your-gh-user>` / `OWNER/REPO` / TODO 邮箱 —— **只 WARN，不阻断** |
 | G7 | **发布面精简** | `CREDITS.md` 保持简短（≤6000 bytes）；`.local/` 被 gitignore（本地长文不进仓库） |
 | G8 | **本机信息零泄露** | 遍历仓库所有文本文件，禁止出现本机路径 / 用户名 / 本机目录名（见下） |
@@ -126,8 +126,19 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 > ⚠️ **断言工作流文件时必须先剥掉整行注释。** 本仓库的 YAML 注释里会写
 > `id-token: write`、`registry.npmjs.org` 这类字面量（解释「为什么必须这样写」），
 > 直接对原文做正则会命中注释 → 检查变成恒真。这条是**变异测试抓出来的**：
-> 删掉真正的 `id-token: write` 后 G5.6 仍报 PASS。现在 G5.6–G5.10 一律先在
-> 去注释后的代码上断言，并用 `.local/mutate-publish.py` 验证过 5 条都敏感。
+> 删掉真正的 `id-token: write` 后 G5.6 仍报 PASS。现在 G5.6–G5.12 一律先在
+> 去注释后的代码上断言，并用 `.local/mutate-publish.py`（G5.6–G5.10）与
+> `.local/mutate-publish2.py`（G5.11–G5.12）验证过 7 条都对破坏敏感。
+
+> ⚠️ **G5.11 是被一次真实事故逼出来的。** 「确认未注入长期 token」这道闸门最初写成
+> 「`NODE_AUTH_TOKEN` 非空即失败」，但 `actions/setup-node` 只要给了 `registry-url`，
+> 就会主动把该变量设成占位值 `XXXXX-XXXXX-XXXXX-XXXXX`（它自己的注释是
+> *"Set the token to a dummy value to avoid errors"*，为的是让缺 token 的 `npm install` 不报错）。
+> 于是**每次发布都在这一步误报失败**。教训：断言「环境里没有某凭据」时，
+> 必须先弄清 CI 自己会不会塞无害的占位值。
+>
+> **G5.12** 是同一段里顺带加的：`id-token: write` 若失效，`npm publish` 只会报难懂的
+> `ENEEDAUTH`；先在闸门里检查 `ACTIONS_ID_TOKEN_REQUEST_URL` 是否存在，把故障点前移。
 
 **G8 是本仓库的硬红线**——本项目对外发布，任何文件都不允许出现机器相关信息：
 
@@ -265,14 +276,15 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 
 1. **版本一致性闸门** —— Release tag（去掉 `v`）必须等于 `package.json` 的 `version`，否则直接拒绝发布。防的是「tag 写 0.4.0、实际发出去 0.3.9」这类不可逆错误；
 2. **发布前跑三套检查** —— `regression.mjs` / `scenarios.mjs` / `check-github-meta.mjs`，任一失败即不发布；
-3. **确认未注入长期 token** —— 显式断言 `NODE_AUTH_TOKEN` / `NPM_TOKEN` 不存在，防止日后有人「顺手加回 token」，变成看起来在用 OIDC、其实在用长期凭据；
+3. **确认未注入长期 token 且 OIDC 通道可用** —— 断言 `NODE_AUTH_TOKEN` / `NPM_TOKEN` 都不是真实凭据（**但放过 `actions/setup-node` 自动写入的占位值 `XXXXX-XXXXX-XXXXX-XXXXX`**，见 §2.3 的说明），并确认 `ACTIONS_ID_TOKEN_REQUEST_URL` 存在，把 `id-token: write` 失效的故障点从 `npm publish` 的 `ENEEDAUTH` 前移到这一步；
 4. `npm publish` —— 经 OIDC 换取短时发布令牌，自动生成 provenance 签名。
 
 > **不需要任何 GitHub Secret。** 这是刻意的：长期 token 会过期、会泄露、需要轮换，而 OIDC 每次由 GitHub 现签。
 > 代价是必须在 npmjs.com 的包设置里把本仓库登记为 Trusted Publisher（见 `GITHUB-SETUP.md`），且
 > **`package.json` 的 `repository.url` 必须与仓库地址完全一致**——这是官方文档的硬要求，写错只会在发布时才报错。
 
-> 上述 5 条契约都由 G5.6–G5.10 钉住，并由 `.local/mutate-publish.py` 验证过对破坏敏感。
+> 上述 4 条契约都由 G5.6–G5.12 钉住，并由 `.local/mutate-publish.py`（G5.6–G5.10）与
+> `.local/mutate-publish2.py`（G5.11–G5.12）验证过对破坏敏感。
 
 ---
 

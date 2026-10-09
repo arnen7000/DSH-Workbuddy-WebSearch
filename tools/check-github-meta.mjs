@@ -171,6 +171,16 @@ console.log(`\nG5  CI 工作流（安全加固 + 接线）`);
     );
     check("G5.10", "publish.yml 发布前接线三套检查（失败即不发布）",
       /regression\.mjs/.test(code) && /scenarios\.mjs/.test(code) && /check-github-meta\.mjs/.test(code));
+    // G5.11 —— 这条是被真事逼出来的：闸门最初写成「NODE_AUTH_TOKEN 非空即失败」，
+    // 而 actions/setup-node 只要给了 registry-url，就会主动把该变量设成占位值
+    // XXXXX-XXXXX-XXXXX-XXXXX，于是**每次发布都在这一步误报失败**（真实事故，白烧一轮）。
+    // 所以要求：既认得占位值，又确实拿它做比较，而不是仅仅「提到过」。
+    check("G5.11", "publish.yml 的长期 token 闸门放过 setup-node 占位值（否则每次发布都误报失败）",
+      /PLACEHOLDER='XXXXX-XXXXX-XXXXX-XXXXX'/.test(code) && /!=\s*"\$PLACEHOLDER"/.test(code));
+    // G5.12 —— id-token: write 失效时，`npm publish` 会报难懂的 ENEEDAUTH；
+    // 先在闸门里直说「OIDC 通道不可用」，把故障点前移。
+    check("G5.12", "publish.yml 显式确认 OIDC 通道可用（把 ENEEDAUTH 前移成清晰报错）",
+      /ACTIONS_ID_TOKEN_REQUEST_URL/.test(code));
   }
 }
 
