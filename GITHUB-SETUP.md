@@ -203,7 +203,26 @@ tools/check-github-meta.mjs                  # GitHub 元数据自检（G1–G9�
 - 一个连接创建后**不能修改**（provider 与必填字段都固定），要改只能删了重建。
 
 > 配好之后建议在 npm 的 Publishing access 里选「要求 2FA 并禁用传统 token」，
-> 长期 token 就彻底没有用武之地了。
+> 长期 token 就彻底没有用武之地了。**顺序别反**：先确认可信发布真的能发出去，再收紧 token。
+
+### 6.2 插件市场收录（awesome-dsh-plugin）
+
+收录走上游仓库的 PR，**一个条目一个文件** `data/plugins/<owner>__<repo>.yml`；市场与商店页的数据源是
+`https://awesome-dsh-plugin.com/plugins.json`（由上游 `main` 定期构建）。CI 只是前置条件，
+**合并前维护者会实际读仓库**。
+
+**详情页截图**：在本仓库 `package.json` 旁放 `screenshots.json`，列出 1–8 张图片的**相对路径**：
+
+```json
+["assets/screenshot-plugins.png", "assets/screenshot-detail.png"]
+```
+
+- 路径相对该文件本身，且不得跳出插件目录（不能以 `/` 开头、不能含 `..`）。
+- 换图只需推本仓库，**下一次构建自动生效**，不必再提收录 PR。
+- 不声明也不报错：商店页会退回从 README 抽图。
+- ⚠️ 条目文件里**不要手写 `npm:` 字段** —— 包与仓库的关联由上游从 registry 自动采集，手写会被 CI 拒。
+- ⚠️ 首次贡献者的 PR 会停在 `action_required`：**维护者批准后 workflow 才会跑**，这不是提交本身的问题；
+  上游自带的守卫 check 会因此报「No checks ran on this pull request」。
 
 ---
 

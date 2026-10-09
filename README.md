@@ -77,7 +77,7 @@ dsh --profile web --dump-config | grep -i "workbuddy-websearch\|searchProvider"
 
 ```bash
 dsh plugin --profile web add dsh-workbuddy-websearch@latest   # 升到最新版
-dsh plugin --profile web add dsh-workbuddy-websearch@0.3.1    # 或固定到某一版
+dsh plugin --profile web add dsh-workbuddy-websearch@0.3.2    # 或固定到某一版
 ```
 
 ### 遇到问题
@@ -271,6 +271,7 @@ dsh headless "帮我搜一下最近的 XX 进展"
 
 | 版本 | 要点 |
 |---|---|
+| **0.3.2** | 新增 `screenshots.json` 与两张界面截图，供插件市场的详情页展示。**运行时行为与 0.3.1 相同** |
 | **0.3.1** | 发布链路改走 **npm 可信发布**（Trusted Publishing / OIDC）：在 GitHub 上发 Release 即自动发布，不再依赖长期 npm token，发布物附带 provenance 签名；修正 `package.json` 的仓库地址大小写（npm 要求与仓库完全一致）。**运行时行为与 0.3.0 相同** |
 | **0.3.0** | **区域绑定**：`region` 默认 `auto`（选实际可用的那一版），首次用到时绑定一版、整会话不切换；取消跨版静默回落（不再悄悄改用另一版扣费）；新增 **Windows 卸载注册表发现**，覆盖「两版装在同一目录」「装在自选盘符」 |
 | **0.2.6** | 文档按读者分层：安装拆成「快速开始」与「遇到问题」，开发态细节移入 DEVELOPING.md；新增本变更记录 |
