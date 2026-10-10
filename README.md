@@ -77,7 +77,7 @@ dsh --profile web --dump-config | grep -i "workbuddy-websearch\|searchProvider"
 
 ```bash
 dsh plugin --profile web add dsh-workbuddy-websearch@latest   # 升到最新版
-dsh plugin --profile web add dsh-workbuddy-websearch@0.3.2    # 或固定到某一版
+dsh plugin --profile web add dsh-workbuddy-websearch@0.3.3    # 或固定到某一版
 ```
 
 ### 遇到问题
@@ -177,14 +177,16 @@ dsh headless "帮我搜一下最近的 XX 进展"
 
 > **自动探测顺序**：① 上面的环境变量 → ② 平台默认布局
 > （Windows 国内版 `%LOCALAPPDATA%\Programs\WorkBuddy\`；macOS `/Applications/*.app`）
-> → ③ Windows 常见安装根的**一层有界扫描**（`%LOCALAPPDATA%\Programs`、`%ProgramFiles%*` 下
+> → ③ **macOS Spotlight 发现**（按 bundle id 反查 → `plutil` 校验 → 可执行性检查；
+> 装在 `/Applications` 之外也能找到）
+> → ④ Windows 常见安装根的**一层有界扫描**（`%LOCALAPPDATA%\Programs`、`%ProgramFiles%*` 下
 > 目录名以 `WorkBuddy` 开头的；**不枚举盘符、不做全盘遍历**）
-> → ④ **Windows 卸载注册表**（`Uninstall` 三处根；`DisplayName` 形状匹配后取
+> → ⑤ **Windows 卸载注册表**（`Uninstall` 三处根；`DisplayName` 形状匹配后取
 > `DisplayIcon` / `InstallLocation`，每个候选都要通过「exe 名相符 + 同级 `version` +
 > `resources/app.asar`」三道布局校验；多于一个就报歧义，**绝不猜**）。
 >
-> ❗ 官方安装器允许把 App 装到**自选盘符或自定义目录**。第 ④ 步覆盖了实机上最常见的
-> 「装在自选盘符」「两版装进同一个目录」两种情形；万一仍找不到，请用环境变量显式指定。
+> ❗ 官方安装器允许把 App 装到**自选盘符或自定义目录**（macOS 上则是 `/Applications` 之外）。
+> 第 ③ ⑤ 步分别覆盖了这两种情形；万一仍找不到，请用环境变量显式指定。
 > 找不到时插件抛出的错误里已包含**可直接粘贴**的设置命令。
 > 详见 [COMPATIBILITY.md](./COMPATIBILITY.md) §4.1。
 
@@ -271,6 +273,7 @@ dsh headless "帮我搜一下最近的 XX 进展"
 
 | 版本 | 要点 |
 |---|---|
+| **0.3.3** | macOS 补齐 **Spotlight 发现链**（`mdfind` 按 bundle id 反查 → `plutil` 校验 → 可执行性检查 → 去重 → 多命中报歧义），对齐官方 connect 的定位策略；此前 macOS 只有 `/Applications/*.app` 一条默认路径，装在别处就发现不了。**Windows 行为完全不变** |
 | **0.3.2** | 新增 `screenshots.json` 与两张界面截图，供插件市场的详情页展示。**运行时行为与 0.3.1 相同** |
 | **0.3.1** | 发布链路改走 **npm 可信发布**（Trusted Publishing / OIDC）：在 GitHub 上发 Release 即自动发布，不再依赖长期 npm token，发布物附带 provenance 签名；修正 `package.json` 的仓库地址大小写（npm 要求与仓库完全一致）。**运行时行为与 0.3.0 相同** |
 | **0.3.0** | **区域绑定**：`region` 默认 `auto`（选实际可用的那一版），首次用到时绑定一版、整会话不切换；取消跨版静默回落（不再悄悄改用另一版扣费）；新增 **Windows 卸载注册表发现**，覆盖「两版装在同一目录」「装在自选盘符」 |

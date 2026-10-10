@@ -1,8 +1,8 @@
 {
   "name": "dsh-workbuddy-websearch",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "将 WorkBuddy 桌面 App 的网络搜索接入 DeepSeek Harness 的 web_search 工具（零配置、零硬依赖）",
-  "versionNote": "0.3.2：为插件市场的详情页补充界面截图。① 新增 screenshots.json，声明两张界面截图（插件列表里的已安装条目、插件详情页显示的版本号与运行状态），市场的 App Store 式详情页会直接采用。② 新增 assets/ 目录存放截图，路径相对 screenshots.json —— 之后想换图只需推自己的仓库，下一次构建自动生效，不必再提收录 PR。③ 运行时行为与 0.3.1 完全相同，无功能变更。",
+  "versionNote": "0.3.3：为 macOS 补齐 Electron 定位的发现链。① 此前 macOS 只有 /Applications/<产品>.app 一条默认路径，装在别处（或目录名与产品名不一致）就完全找不到；Windows 有「常见安装根扫描 + 卸载注册表」两道兜底，macOS 一道都没有。② 现在按官方 dsh-workbuddy-connect 的做法补齐：用 mdfind 按 bundle id 反查 Spotlight 索引，再用 plutil 校验候选自己的 CFBundleIdentifier，然后确认包内 Contents/MacOS/Electron 存在且可执行，按 realpath 去重；多于一个命中就报歧义、绝不猜。③ 索引只是线索不是信任；mdfind/plutil 用绝对路径调用（不走 PATH）；结果按进程缓存一次，查询失败不缓存以便下次重试。④ 平台守卫保证 Windows 路径零影响，Windows 行为与 0.3.2 完全相同。⑤ 新增 16 条回归用例与 2 条异常路径用例，并用变异测试证明这些护栏不是恒真。⑥ macOS 仍为实验性：代码与官方实现逐条对齐，但本机没有 Mac 设备，未做真机端到端验证。",
   "author": "XingLang & WorkBuddy (小研)",
   "repository": {
     "type": "git",

@@ -20,7 +20,7 @@
  *   node regression.mjs "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-websearch"
  */
 import { pathToFileURL } from "node:url";
-import { readFileSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } from "node:fs";
+import { readFileSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -749,6 +749,246 @@ check("T10.12", /^0\.3\.[0-9]+$/.test(pkg.version), `版本号 ${pkg.version}（
         plat.resetUninstallRecordsCache();
       }
     } finally {
+      try { rmSync(tmp, { recursive: true, force: true }); } catch {}
+    }
+  }
+}
+
+// ── T10.33–T10.47 macOS Spotlight 发现链 ──
+// 为什么需要这条路径：macOS 上「平台默认路径」只有 `/Applications/<产品>.app` 一条，
+// 装在别处就完全发现不了（Windows 还有常见安装根扫描与卸载注册表两道兜底）。
+// 做法与官方 `dsh-workbuddy-connect` 一致：按 **bundle id** 查 Spotlight，
+// 再用 `plutil` 校验身份，最后确认 `Contents/MacOS/Electron` 可执行。
+// 夹具都建在临时目录里、`mdfind`/`plutil` 用注入的执行器替代 → ubuntu-latest 上同样可跑。
+{
+  const need = [
+    "findElectronFromMacosBundles", "resolveElectronFromMacosDiscovery",
+    "resetMacosDiscoveryCache", "defaultMacosDiscoveryRunner",
+  ];
+  const missing = need.filter((k) => typeof plat?.[k] !== "function");
+  if (missing.length > 0 || typeof plat?.MDFIND_BIN !== "string" || typeof plat?.PLUTIL_BIN !== "string") {
+    bad("T10.33", `lib/platform.mjs 缺少 macOS 发现导出：${missing.join(", ") || "MDFIND_BIN / PLUTIL_BIN"}`);
+  } else {
+    // 工具必须是绝对路径（不走 PATH —— 用户可改 PATH，而这是要执行的东西）
+    check(
+      "T10.33",
+      plat.MDFIND_BIN === "/usr/bin/mdfind" && plat.PLUTIL_BIN === "/usr/bin/plutil",
+      `mdfind/plutil 用绝对路径调用（${plat.MDFIND_BIN} / ${plat.PLUTIL_BIN}）`,
+    );
+
+    const CN_ID = plat.VARIANTS[0].electron.macosBundleId;
+    const AI_ID = plat.VARIANTS[1].electron.macosBundleId;
+    const tmp = mkdtempSync(join(tmpdir(), "dsh-wb-mac-"));
+    try {
+      // 合成一个 `.app` 包：Contents/MacOS/Electron + Contents/Info.plist
+      const makeBundle = (dir, { executable = true } = {}) => {
+        const macos = join(dir, "Contents", "MacOS");
+        mkdirSync(macos, { recursive: true });
+        writeFileSync(join(dir, "Contents", "Info.plist"), "<?xml version=\"1.0\"?><plist/>");
+        const exe = join(macos, "Electron");
+        writeFileSync(exe, "");
+        try { chmodSync(exe, executable ? 0o755 : 0o644); } catch {}
+        return exe;
+      };
+      // 只按路径回报 bundle id 的执行器（模拟 plutil）
+      const toolsFor = (map, apps) => ({
+        findApps: () => apps,
+        bundleIdentifier: (p) => map[p],
+        bundleVersion: () => "5.7.6",
+      });
+
+      const appA = join(tmp, "MacApps", "WorkBuddy.app");
+      const appB = join(tmp, "Alt", "WorkBuddy.app");
+      const appWrong = join(tmp, "MacApps", "SomethingElse.app");
+      const appNoExe = join(tmp, "MacApps", "NoExe.app");
+      const exeA = makeBundle(appA);
+      makeBundle(appB);
+      makeBundle(appWrong);
+      mkdirSync(join(appNoExe, "Contents"), { recursive: true });
+      writeFileSync(join(appNoExe, "Contents", "Info.plist"), "<?xml version=\"1.0\"?><plist/>");
+      const appNotExec = join(tmp, "MacApps", "NotExec.app");
+      makeBundle(appNotExec, { executable: false });
+
+      const idMap = {
+        [appA]: CN_ID,
+        [appB]: CN_ID,
+        [appWrong]: "com.example.unrelated",
+        [appNoExe]: CN_ID,
+        [appNotExec]: CN_ID,
+      };
+
+      // T10.34 单候选命中
+      {
+        const out = plat.findElectronFromMacosBundles([appA], { bundleId: CN_ID, tools: toolsFor(idMap) });
+        check("T10.34", out.found === true && out.path === exeA,
+          "单候选 → 命中 Contents/MacOS/Electron");
+      }
+
+      // T10.35 身份校验：bundle id 不符 → 拒绝（索引只是线索，不是信任）
+      {
+        const out = plat.findElectronFromMacosBundles([appWrong], { bundleId: CN_ID, tools: toolsFor(idMap) });
+        check("T10.35", out.found === false && out.rejected === 1,
+          "Spotlight 返回的同名前缀 App（bundle id 不符）被拒绝");
+      }
+
+      // T10.36 包内缺 Contents/MacOS/Electron → 拒绝
+      {
+        const out = plat.findElectronFromMacosBundles([appNoExe], { bundleId: CN_ID, tools: toolsFor(idMap) });
+        check("T10.36", out.found === false && out.rejected === 1,
+          "包内无 Contents/MacOS/Electron → 拒绝（不误报）");
+      }
+
+      // T10.37 不可执行 → 拒绝（仅 POSIX 有意义；Windows 上 X_OK 恒真，故 SKIP）
+      if (process.platform === "win32") {
+        skip("T10.37", "不可执行的 Electron 被拒绝（Windows 上 accessSync(X_OK) 恒真，无法构造）");
+      } else {
+        const out = plat.findElectronFromMacosBundles([appNotExec], { bundleId: CN_ID, tools: toolsFor(idMap) });
+        check("T10.37", out.found === false && out.rejected === 1,
+          "不可执行的 Contents/MacOS/Electron → 拒绝");
+      }
+
+      // T10.38 两个合法候选 → 报歧义，绝不猜
+      {
+        const out = plat.findElectronFromMacosBundles([appA, appB], { bundleId: CN_ID, tools: toolsFor(idMap) });
+        check("T10.38", out.found === false && Array.isArray(out.ambiguous) && out.ambiguous.length === 2,
+          "两个合法候选 → ambiguous（宁可不猜，也不选错账号对应的 App）");
+      }
+
+      // T10.39 同一路径被索引重复列出 → 去重后仍算一个（Spotlight 会返回重复行）
+      {
+        const out = plat.findElectronFromMacosBundles([appA, appA, appA], { bundleId: CN_ID, tools: toolsFor(idMap) });
+        check("T10.39", out.found === true && out.path === exeA,
+          "索引重复列出同一 bundle → 去重后命中（不误报歧义）");
+      }
+
+      // T10.39b realpath 去重：软链接指向同一 bundle 不应算两个（Windows 无权限时跳过）
+      {
+        const link = join(tmp, "MacApps", "WorkBuddy-link.app");
+        let linked = false;
+        try { symlinkSync(appA, link, "dir"); linked = true; } catch {}
+        if (!linked) {
+          skip("T10.39b", "软链接去重（当前环境无法创建符号链接）");
+        } else {
+          const out = plat.findElectronFromMacosBundles([appA, link], { bundleId: CN_ID, tools: toolsFor(idMap) });
+          check("T10.39b", out.found === true && out.path === exeA,
+            "软链接指向同一 bundle → realpath 去重后命中");
+        }
+      }
+
+      // T10.40 产品隔离：国内版 bundle id 不得匹配国际版候选（反之亦然）
+      {
+        const aiApp = join(tmp, "MacApps", "WorkBuddy AI.app");
+        makeBundle(aiApp);
+        const map = { ...idMap, [aiApp]: AI_ID };
+        const asCn = plat.findElectronFromMacosBundles([aiApp], { bundleId: CN_ID, tools: toolsFor(map) });
+        const asAi = plat.findElectronFromMacosBundles([aiApp], { bundleId: AI_ID, tools: toolsFor(map) });
+        check("T10.40", asCn.found === false && asAi.found === true,
+          "两版 bundle id 互不匹配（不会把国际版误当国内版，反之亦然）");
+      }
+
+      // T10.41 非法入参一律不抛、返回「未找到」
+      {
+        let threw = false;
+        const results = [];
+        try {
+          for (const bads of [[undefined, {}], [null, {}], ["x", {}], [[], {}], [[appA], {}], [[appA], { bundleId: "" }], [[appA], { bundleId: CN_ID, tools: null }]]) {
+            results.push(plat.findElectronFromMacosBundles(bads[0], bads[1]));
+          }
+        } catch { threw = true; }
+        check("T10.41", threw === false && results.every((r) => r?.found === false),
+          "非法入参（非数组 / 空 bundleId / 无执行器）一律返回 found:false，不抛");
+      }
+
+      // T10.42 注入 runner：resolveElectronFromMacosDiscovery 命中
+      {
+        plat.resetMacosDiscoveryCache();
+        const out = plat.resolveElectronFromMacosDiscovery(plat.VARIANTS[0], { macosDiscovery: toolsFor(idMap, [appA]) });
+        check("T10.42", out === exeA, "resolveElectronFromMacosDiscovery 命中并返回 Electron 路径");
+        plat.resetMacosDiscoveryCache();
+      }
+
+      // T10.43 查询按进程缓存一次；reset 后重跑（mdfind 是子进程，成本护栏）
+      {
+        plat.resetMacosDiscoveryCache();
+        let calls = 0;
+        const tools = { ...toolsFor(idMap, [appA]), findApps: () => { calls += 1; return [appA]; } };
+        const first = plat.resolveElectronFromMacosDiscovery(plat.VARIANTS[0], { macosDiscovery: tools });
+        const callsAfterFirst = calls;
+        const second = plat.resolveElectronFromMacosDiscovery(plat.VARIANTS[0], { macosDiscovery: tools });
+        const cached = callsAfterFirst === 1 && calls === callsAfterFirst;
+        plat.resetMacosDiscoveryCache();
+        plat.resolveElectronFromMacosDiscovery(plat.VARIANTS[0], { macosDiscovery: tools });
+        check("T10.43", first === exeA && second === exeA && cached && calls === callsAfterFirst + 1,
+          `Spotlight 查询只跑一次（第二次复用缓存；reset 后重跑）→ calls=${calls}`);
+        plat.resetMacosDiscoveryCache();
+      }
+
+      // T10.44 查询**失败**（findApps 返回 undefined）不缓存 → 下次可重试成功
+      {
+        plat.resetMacosDiscoveryCache();
+        let attempt = 0;
+        const flaky = {
+          findApps: () => { attempt += 1; return attempt === 1 ? undefined : [appA]; },
+          bundleIdentifier: (p) => idMap[p],
+        };
+        const failed = plat.resolveElectronFromMacosDiscovery(plat.VARIANTS[0], { macosDiscovery: flaky });
+        const retried = plat.resolveElectronFromMacosDiscovery(plat.VARIANTS[0], { macosDiscovery: flaky });
+        check("T10.44", failed === undefined && retried === exeA && attempt === 2,
+          "一次查询失败不被缓存 → 下次重试能成功（瞬时故障不把定位永久钉死）");
+        plat.resetMacosDiscoveryCache();
+      }
+
+      // T10.45 定位顺序：显式环境变量优先于 Spotlight
+      {
+        plat.resetMacosDiscoveryCache();
+        const override = join(tmp, "override-electron");
+        writeFileSync(override, "");
+        const picked = plat.resolveElectronBinary(
+          plat.VARIANTS[0],
+          { WORKBUDDY_ELECTRON_BIN: override },
+          { platform: "darwin", macosDiscovery: toolsFor(idMap, [appA]) },
+        );
+        check("T10.45", picked === override, "定位顺序：显式 WORKBUDDY_ELECTRON_BIN 优先于 Spotlight 发现");
+        plat.resetMacosDiscoveryCache();
+      }
+
+      // T10.46 `macosDiscovery: false` 完全跳过（诊断/测试用）
+      {
+        plat.resetMacosDiscoveryCache();
+        const out = plat.resolveElectronBinary(
+          plat.VARIANTS[0], {}, { platform: "darwin", macosDiscovery: false },
+        );
+        check("T10.46", out === undefined, "macosDiscovery:false → 完全跳过 Spotlight（返回 undefined）");
+      }
+
+      // T10.47 平台隔离：win32 分支不得走 macOS 发现（新代码对 Windows 必须零影响）
+      {
+        plat.resetMacosDiscoveryCache();
+        let touched = 0;
+        const probe = { findApps: () => { touched += 1; return [appA]; }, bundleIdentifier: (p) => idMap[p] };
+        const picked = plat.resolveElectronBinary(
+          plat.VARIANTS[0], {}, { platform: "win32", registry: false, macosDiscovery: probe },
+        );
+        check("T10.47", picked === undefined && touched === 0,
+          "platform=win32 时不触碰 macOS 发现链（Windows 稳定路径零影响）");
+      }
+
+      // T10.48 静态接线断言：darwin 分支真的调用了发现链，且 bundleId 取自 variant
+      //        （防「定义了但没接线」与「macosBundleId 再次沦为死字段」）
+      {
+        const platSrc = readFileSync(join(root, "lib", "platform.mjs"), "utf8");
+        const resolveBody = platSrc.slice(platSrc.indexOf("export function resolveElectronBinary"));
+        const discoveryBody = platSrc.slice(platSrc.indexOf("export function resolveElectronFromMacosDiscovery"));
+        check(
+          "T10.48",
+          /resolveElectronFromMacosDiscovery\s*\(/s.test(resolveBody)
+            && /macosBundleId/.test(discoveryBody)
+            && /findElectronFromMacosBundles\s*\(/s.test(discoveryBody),
+          "resolveElectronBinary 已接入 macOS 发现链，且 bundleId 取自 variant.electron.macosBundleId",
+        );
+      }
+    } finally {
+      plat.resetMacosDiscoveryCache();
       try { rmSync(tmp, { recursive: true, force: true }); } catch {}
     }
   }

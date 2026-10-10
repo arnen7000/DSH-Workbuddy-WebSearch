@@ -381,6 +381,60 @@ console.log("\nS5  平台路径与自定义安装（用户把 App 装到非默�
         v.electron !== null,
     );
   check("S5.7", "cn + global 两 variant 元数据完整", variantsOk, `count=${VARIANTS?.length}`);
+
+  // S5.8 macOS Spotlight 工具真的不存在时（非 macOS 机器 / 工具被拦），
+  //      定位必须安全失败：不抛错、返回 undefined，交给上层给环境变量指引。
+  {
+    const { resolveElectronFromMacosDiscovery, findElectronFromMacosBundles } = __internals;
+    let safe = true;
+    let value;
+    try {
+      const cnVariant = VARIANTS.find((v) => v.region === "cn") ?? VARIANTS[0];
+      // 不注入执行器 → 真的去调 /usr/bin/mdfind（在非 macOS 上必然失败）
+      value = resolveElectronFromMacosDiscovery(cnVariant, {});
+      // 顺带：执行器自己抛错也不能穿透出来
+      value = resolveElectronFromMacosDiscovery(cnVariant, {
+        macosDiscovery: { findApps: () => { throw new Error("mdfind exploded"); } },
+      }) ?? value;
+      const bogus = findElectronFromMacosBundles(["not-a-real-bundle.app"], {
+        bundleId: "com.tencent.workbuddy.mac",
+        tools: { bundleIdentifier: () => { throw new Error("plutil exploded"); } },
+      });
+      safe = bogus?.found === false && bogus.rejected === 1;
+    } catch (error) {
+      safe = false;
+      value = `threw: ${error?.message}`;
+    }
+    check(
+      "S5.8",
+      "mdfind/plutil 不可用或抛错 → 安全失败（不抛）",
+      safe && value === undefined,
+      `value=${String(value).slice(0, 60)}`,
+    );
+  }
+
+  // S5.9 Windows 分支不得被 macOS 发现链污染（新代码对稳定路径必须零影响）
+  {
+    let touched = 0;
+    let picked;
+    let safe = true;
+    try {
+      const cnVariant = VARIANTS.find((v) => v.region === "cn") ?? VARIANTS[0];
+      picked = resolveElectronBinary(cnVariant, {}, {
+        platform: "win32",
+        registry: false,
+        macosDiscovery: { findApps: () => { touched += 1; return []; } },
+      });
+    } catch {
+      safe = false;
+    }
+    check(
+      "S5.9",
+      "platform=win32 时不触碰 macOS 发现链",
+      safe && picked === undefined && touched === 0,
+      `touched=${touched} picked=${String(picked).slice(0, 40)}`,
+    );
+  }
 }
 
 // ───────────────────────── S6 并发 / 边界规模 ─────────────────────────

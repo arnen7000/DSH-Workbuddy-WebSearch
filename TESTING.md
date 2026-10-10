@@ -61,7 +61,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 | T7 | 错误路径 | 空 query 报错码、`available()` 返回布尔、abort 码 |
 | T8 | 边界 | 重复导入、`__internals` 齐全、候选路径含国际版 |
 | T9 | 零依赖自足 | 三个自带模块可独立加载、只依赖 `node:` 与相对路径、AES 往返；**key helper 的绑定契约（T9.15/T9.16 源码断言：必须是 `_linkedBinding("electron_browser_workbuddy_storage").loggerGet()`）**、真实载荷形状兼容（T9.17/T9.18）、**provider id 冲突的可操作报错（T9.19/T9.20/T9.21：带冲突 id + 给出排查步骤 + 不点名任何具体插件）** |
-| T10 | 平台覆盖 | win32/darwin 候选路径、cpu 约束、**Windows 安装根有界扫描（T10.13–T10.23）**、真实二进制探测（T10.24，仅 win32）、**卸载注册表发现（T10.25–T10.32：`DisplayIcon` 三形态、只取三个值名、单候选命中、多候选报歧义、布局校验拦截、产品形状互不匹配、按进程只查一轮、env 优先于注册表）** |
+| T10 | 平台覆盖 | win32/darwin 候选路径、cpu 约束、**Windows 安装根有界扫描（T10.13–T10.23）**、真实二进制探测（T10.24，仅 win32）、**卸载注册表发现（T10.25–T10.32：`DisplayIcon` 三形态、只取三个值名、单候选命中、多候选报歧义、布局校验拦截、产品形状互不匹配、按进程只查一轮、env 优先于注册表）**、**macOS Spotlight 发现（T10.33–T10.48：`mdfind`/`plutil` 绝对路径调用、bundle id 身份校验、缺 `Contents/MacOS/Electron` 与不可执行均被拒、多候选报歧义、索引重复行与软链接去重、两版 bundle id 互不匹配、非法入参不抛、查询只跑一轮、查询失败不缓存、env 优先于 Spotlight、`macosDiscovery:false` 跳过、win32 不触碰该链、静态接线断言）** |
 | T11 | 区域绑定 | 凭据形态识别（absent/plain/encrypted）、`auto` 选定规则、显式指定的强约束、**绑定粘性**、跨版凭据拒绝（`WB_SEARCH_CREDENTIAL_REGION_MISMATCH`）、`available()` 只看绑定那一版，以及「不跨版回落」的源码级断言 |
 
 > **为什么 T9.15/T9.16 是源码断言而不是行为测试**：key helper 是**另一个进程**里跑的私有绑定调用，
@@ -244,6 +244,7 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 | 国内版 ↔ 国际版 | T3/T4/T6.8 | S5.3 | 部分需凭据 |
 | 只搜不抓（接管范围） | — | S7.2 / S7.3 | ✅ 离线 |
 | Windows / macOS 路径 | T10 | S5.3 / S5.5 | ✅ 离线（模拟） |
+| **macOS 定位链**（Spotlight 工具缺失/抛错 / 平台隔离） | T10.33–T10.48 | S5.8 / S5.9 | ✅ 离线（合成夹具 + 注入执行器） |
 | 无 connect 也能跑 | T9 | — | ✅ 离线 |
 | **connect 装了但坏了**（返回死 token / 抛错 / 包坏） | — | S9.1–S9.7 | ✅ 离线（伪造 connect 包） |
 | 超长 query / 并发 | T8.3 | S6.1 / S6.2 | ✅ 离线 |
@@ -285,6 +286,12 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 
 > 上述 4 条契约都由 G5.6–G5.12 钉住，并由 `.local/mutate-publish.py`（G5.6–G5.10）与
 > `.local/mutate-publish2.py`（G5.11–G5.12）验证过对破坏敏感。
+
+平台定位那两组（Windows 注册表发现、macOS Spotlight 发现）同样做过变异测试：
+`.local/mutate-macos.py` 注入 4 个「写错」的版本（去掉 bundle id 身份校验 / 去掉多命中报歧义 /
+把查询失败也缓存 / darwin 平台守卫失效），断言 T10.35·T10.40 / T10.38 / T10.44 / T10.47
+**确实变红**——即这几条护栏不是恒真。该脚本用 **Python 而非 Node** 起子进程：
+本机环境下 Node 的 `spawnSync` 被拦（EBUSY），拿不到子进程输出。
 
 ---
 

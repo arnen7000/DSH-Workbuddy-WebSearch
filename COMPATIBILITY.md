@@ -41,7 +41,7 @@
 | **Windows x64** | ✅ **稳定支持** | 全部实测环境均为 Win11 x64 |
 | **Windows ARM64** | ⚠️ 预期可用，未实测 | WorkBuddy 官方称「Windows x64 兼容 ARM64」；Node 有 win-arm64 版 |
 | **Windows 32 位（ia32）** | ❌ **不支持** | 见 §1.1：WorkBuddy 桌面端**没有 32 位版本**，无凭据可读 |
-| **macOS Apple Silicon（arm64）** | 🧪 **实验性** | WorkBuddy 官方提供 Mac ARM64 版；路径逻辑对齐 connect 已验证实现，**手头无 Mac 设备，未实测** |
+| **macOS Apple Silicon（arm64）** | 🧪 **实验性** | WorkBuddy 官方提供 Mac ARM64 版；路径与**定位链**（含 Spotlight 发现）逐条对齐 connect 已验证实现，**手头无 Mac 设备，未实测** |
 | **macOS Intel（x64）** | 🧪 **实验性** | 同上（官方提供 Mac x64 版） |
 | **Linux / WSL** | ❌ 不支持（保留代码路径） | WorkBuddy **无 Linux 桌面端**；仅在 WSL 中可读宿主机 Windows 凭据，未实测 |
 | **鸿蒙 HarmonyOS** | ❌ 不支持 | WorkBuddy 鸿蒙版是**手机 App**（2026-07-18 随 iOS/Android 上线），非桌面端；且无 dsh 运行时 |
@@ -169,7 +169,7 @@ workbuddy-desktop-ai.info   ← 国际版
 
 | 自带模块 | 职责 |
 |---|---|
-| `lib/platform.mjs` | 平台候选路径（win32/darwin/linux）+ Electron 二进制定位 |
+| `lib/platform.mjs` | 平台候选路径（win32/darwin/linux）+ Electron 二进制定位（Windows 注册表发现 / macOS Spotlight 发现） |
 | `lib/decrypt.mjs` | 独立解开 `$wbEncrypted` 信封（AES-256-GCM + App 的 `WB-AAD` 构造） |
 | `lib/credentials.mjs` | 统一「明文 / 加密」「国内版 / 国际版」的读取与解析 |
 
@@ -216,13 +216,22 @@ workbuddy-desktop-ai.info   ← 国际版
 |---|---|---|
 | 1 | 环境变量 `WORKBUDDY_ELECTRON_BIN` / `WORKBUDDY_AI_ELECTRON_BIN` | **任何**安装位置（最高优先级） |
 | 2 | 平台默认布局 | Windows 国内版 `%LOCALAPPDATA%\Programs\WorkBuddy\`；macOS 两版 `/Applications/*.app` |
-| 3 | Windows **常见安装根的有界扫描** | 系统级安装（`%ProgramFiles%`）、目录名带后缀（如 `WorkBuddy AI\`） |
-| 4 | Windows **卸载注册表发现**（`reg query ... /s`） | **装在自选盘符/自定义目录**、**两版装进同一个目录** —— 这两种第 2、3 步都够不到 |
+| 3 | **macOS：Spotlight 发现**（`mdfind` 按 bundle id 反查 → `plutil` 校验 → 可执行性检查 → realpath 去重） | macOS 上**装在 `/Applications` 之外**、或目录名与产品名不一致 —— 第 2 步够不到（macOS 没有 Windows 那两道兜底） |
+| 4 | Windows **常见安装根的有界扫描** | 系统级安装（`%ProgramFiles%`）、目录名带后缀（如 `WorkBuddy AI\`） |
+| 5 | Windows **卸载注册表发现**（`reg query ... /s`） | **装在自选盘符/自定义目录**、**两版装进同一个目录** —— 这两种第 2、4 步都够不到 |
 | — | 找不到 | 返回 `undefined`，并抛出**带可操作指引**的错误（含该设哪个变量、两条可粘贴命令） |
 
 扫描的边界（刻意保守）：只扫 `%LOCALAPPDATA%\Programs`、`%ProgramFiles%`、`%ProgramW6432%`、
 `%ProgramFiles(x86)%` 这**固定几个根**下的**一层**子目录，且只认目录名以 `WorkBuddy` 开头的；
 不做全盘遍历、不枚举盘符（枚举盘符可能卡在失联的网络驱动器上）。任何一步失败都静默跳过。
+
+macOS 的发现链与 Windows 的注册表发现**取向完全一致**：索引只是线索、不是信任 ——
+每个候选都要过 `plutil` 校验 `CFBundleIdentifier`；再确认 `Contents/MacOS/Electron`
+确实存在且**可执行**；按 realpath 去重；**多于一个就报歧义，绝不猜**（选错会读到另一版的账号）。
+用 **bundle id** 而不是目录名查询，是因为目录名可以改、bundle id 不会。
+`mdfind` / `plutil` 用**绝对路径**（`/usr/bin/...`）调用，不走 PATH；结果按进程缓存一次。
+查询**失败**（工具缺失 / 超时 / 被拦）**不缓存**，留待下次重试 —— 一次瞬时故障不该把
+整个进程的定位永久钉死。
 
 > ❗ **仍覆盖不到：极少数把 App 装到自选盘符或自定义路径、且卸载注册表里也没有记录的机器。**
 > 自选盘符是官方安装器**允许**的常见操作；第 4 步的卸载注册表发现正是为它准备的
@@ -489,7 +498,8 @@ connect + memory-evolve + better-sidebar + cost-meter + genui，把搜索插件�
 
 ## 8. 未验证 / 已知边界（诚实清单）
 
-- 🧪 **macOS**：代码路径完整、逻辑对齐 connect，但**未在真实 Mac 上端到端验证**。
+- 🧪 **macOS**：代码路径完整，定位链（含 Spotlight 发现）与官方 connect **逐条对齐**，
+  但**未在真实 Mac 上端到端验证** —— 本机没有 Mac 设备，这一点不会因为代码补齐而改变。
 - ❌ **Linux / WSL / 鸿蒙**：不支持（无对应桌面端；WSL 读宿主凭据的路径未实测）。
 - ❌ **32 位 Windows**：不支持（WorkBuddy 桌面端无 32 位构建）。
 - ❓ **dsh < 0.1.5-rc.2** 或 **> 0.2.0-rc.2**：未逐一验证（接缝稳定，预期可用）。
