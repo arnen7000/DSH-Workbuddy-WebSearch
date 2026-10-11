@@ -17,7 +17,25 @@
 # 凭据缺失时脚本会明确报错并给出两种补救方式，而不是静默失败。
 set -euo pipefail
 
-PROXY="${DSH_GIT_PROXY:-http://127.0.0.1:7890}"
+# 代理：**自动探测**，不写死。
+#
+# 写死端口会在两种常见情形下帮倒忙，而且报错会指向错误的方向：
+#   - 代理没开（或换了端口）→ git 连 127.0.0.1:7890 立即失败，
+#     但脚本会把它误判成「缺凭据」，于是用户去折腾 PAT，白费功夫；
+#   - 网络本来就能直连 → 白白多绕一跳。
+#
+# 规则：DSH_GIT_PROXY 显式指定则用它（也接受空串表示强制直连）；
+# 否则探测默认端口，**通才用**，不通就直连。
+PROXY="${DSH_GIT_PROXY-}"
+if [ -z "${DSH_GIT_PROXY+x}" ]; then
+  for candidate in http://127.0.0.1:7890 http://127.0.0.1:7891; do
+    host_port="${candidate#http://}"
+    if command -v nc >/dev/null 2>&1 && nc -z -G 1 "${host_port%%:*}" "${host_port##*:}" 2>/dev/null; then
+      PROXY="$candidate"
+      break
+    fi
+  done
+fi
 DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
 
@@ -72,7 +90,12 @@ echo "✓ regression / scenarios / check-github-meta 全通过"
 echo
 
 # 3) 代理只作用于本次 git 调用，不落盘到 git config。
-GIT=(git -c "http.proxy=${PROXY}" -c "https.proxy=${PROXY}")
+#    PROXY 为空 = 直连（不带 -c 参数，避免把空代理传给 git）。
+if [ -n "$PROXY" ]; then
+  GIT=(git -c "http.proxy=${PROXY}" -c "https.proxy=${PROXY}")
+else
+  GIT=(git)
+fi
 
 # ⚠️ 必须推到**默认分支**，而不是当前 HEAD。
 #
@@ -104,20 +127,47 @@ fi
 echo
 
 # 4) 推送。
-if [ "$DRY_RUN" = "1" ]; then
-  echo "[dry-run] 将执行：git push origin ${PUSH_REF}"
-  "${GIT[@]}" push --dry-run origin "$PUSH_REF" || {
-    echo "✗ 推送预演失败：多半是缺凭据。两种补救方式：" >&2
+#
+# 失败原因分三类，报错必须分开 —— 把它们混成一句「缺凭据」会让用户白折腾：
+#   - 连不上（网络/代理）→ 该去查网络，不是去配 PAT；
+#   - 认证失败 → 才是凭据问题；
+#   - 其他（如非快进）→ 原样回显 git 的话。
+diagnose_push_failure() {
+  local out="$1"
+  echo "✗ 推送预演失败。" >&2
+  if printf '%s' "$out" | grep -qiE "could not resolve host|failed to connect|connection (refused|timed out)|operation timed out|network is unreachable"; then
+    echo "  原因：**连不上 GitHub**（不是凭据问题）。" >&2
+    echo "  - 当前代理设置：${PROXY:-（直连）}" >&2
+    echo "  - 可显式指定代理：DSH_GIT_PROXY=http://127.0.0.1:7890 bash $0" >&2
+    echo "  - 或强制直连：  DSH_GIT_PROXY= bash $0" >&2
+  elif printf '%s' "$out" | grep -qiE "could not read username|authentication failed|permission denied|403"; then
+    echo "  原因：**缺推送凭据**。两种补救方式：" >&2
     echo "    a) 用 PAT：git remote set-url origin https://<用户名>:<PAT>@github.com/arnen7000/DSH-Workbuddy-WebSearch.git" >&2
     echo "    b) 改 SSH：git remote set-url origin git@github.com:arnen7000/DSH-Workbuddy-WebSearch.git" >&2
+  else
+    echo "  原因：见上方 git 输出。" >&2
+  fi
+}
+
+if [ "$DRY_RUN" = "1" ]; then
+  echo "[dry-run] 将执行：git push origin ${PUSH_REF}"
+  push_out="$("${GIT[@]}" push --dry-run origin "$PUSH_REF" 2>&1)" || {
+    printf '%s\n' "$push_out" >&2
+    diagnose_push_failure "$push_out"
     exit 1
   }
+  printf '%s\n' "$push_out"
   echo "[dry-run] 将执行：git tag $TAG && git push origin $TAG"
   exit 0
 fi
 
 echo "== 推送分支（目标：${DEFAULT_BRANCH}）=="
-"${GIT[@]}" push origin "$PUSH_REF"
+push_out="$("${GIT[@]}" push origin "$PUSH_REF" 2>&1)" || {
+  printf '%s\n' "$push_out" >&2
+  diagnose_push_failure "$push_out"
+  exit 1
+}
+printf '%s\n' "$push_out"
 
 # 5) 打 tag 并推送。tag 与 package.json 版本必须一致（CI 也卡这条）。
 if git rev-parse "$TAG" >/dev/null 2>&1; then
