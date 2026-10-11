@@ -77,3 +77,27 @@
 `["shell","fs-read","network","env"]`、**`redLines: []`** ——
 没有红线，市场不会拦或告警。其中 `shell` 来自解密时启动 WorkBuddy 自带
 Electron 取密钥这一必要动作。
+
+**2026-10 复验**（`dsh-trust-check@0.1.13`，扫 0.3.4 代码）：
+
+```
+1 plugin(s) · 0 red · 0 accepted · 1 review · 0 expected · 0 clear
+dsh-workbuddy-websearch 0.3.4 — review
+  No hard red lines; if capabilities match why you installed it, mark as expected in Settings.
+  capabilities: shell, fs-read, network (outbound), env
+  destinations (literal): https-host: copilot.tencent.com / https-host: www.workbuddy.ai
+```
+
+> ⚠️ **别被 JSON 里的 `band` 吓到。** 用 `--dir` 扫**本地目录**时，扫描器会因
+> 「install spec is not pinned」再扣 10 分，`band` 变成 `red`（score 48）。
+> 那是**调用方式的产物**，不是插件的属性 —— 市场扫的是已发布的 npm 包，
+> 用 `--spec npm:dsh-workbuddy-websearch@<版本>` 复现即为 `yellow`（58 分）。
+> 更关键的是扫描器自己的文档写明：**判定看 `redLines` 而不是 score**
+> （`README.en.md`：*"The verdict follows `redLines`, not the score"*），
+> 而我们的 `redLines` 为空，CLI 判词是 `0 red … review`。
+>
+> 上架前想自己复验：
+>
+> ```bash
+> npx dsh-trust-check --dir . --spec npm:dsh-workbuddy-websearch@0.3.4
+> ```
