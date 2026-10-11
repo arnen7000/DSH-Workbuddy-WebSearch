@@ -3,6 +3,12 @@
 这个目录放**给外部仓库用的提交物**，不属于插件运行时（`package.json` 的 `files`
 不含它，因此不会进 npm 包）。
 
+| 文件 | 用途 |
+|---|---|
+| [`awesome-dsh-plugin-entry.yml`](./awesome-dsh-plugin-entry.yml) | 上架条目本体（放进上游 `data/plugins/` 的那份内容） |
+| [`market-pr.md`](./market-pr.md) | **提 PR 时直接复制粘贴**的标题与描述，含提交前自查清单 |
+| [`publish.sh`](./publish.sh) | 一键推送 + 打 tag + 建 Release（Release 才触发 npm 发布） |
+
 ## `awesome-dsh-plugin-entry.yml` —— DSH 插件市场上架条目
 
 **用途**：让本插件出现在 **DSH 插件市场**（`dshmarket`）里，用户就能在界面上
