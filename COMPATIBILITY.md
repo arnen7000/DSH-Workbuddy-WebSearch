@@ -683,7 +683,7 @@ if (configuredId !== undefined) {
 | 区域回落行为 | 0.2.x `resolveCredentialIndependently({region})` | ℹ️ 当时未给二进制会**回落到国内版明文凭据**。⛔ **0.3.0 起取消该回落**（§4.2）：如实报错，绝不静默改用另一版账号 |
 | 区域正确性 | 同上，给出二进制 | ✅ `variant=workbuddy-ai`、`source=desktop-encrypted`、`www.workbuddy.ai` |
 | 注册表发现 | `reg.exe` | ✅ 0.3.0 已实现（§4.1）。本机 `reg.exe` 被程序黑名单拦住 → **无法真机实测**，改用合成 `reg query` 输出在 T10.25–T10.32 覆盖 |
-| 回归套件 | `node tools/regression.mjs <dir>` | ✅ **源态 / 安装态均 172，全 PASS**（T1–T13；含 T9.15–T9.18、T10.13–T10.48、T11.1–T11.16、T11.3b/T11.3c、T12.1–T12.14、T13.1–T13.13） |
+| 回归套件 | `node tools/regression.mjs <dir>` | ✅ **源态 / 安装态均 174，全 PASS**（T1–T13；含 T9.15–T9.18、T10.13–T10.48、T11.1–T11.16、T11.3b/T11.3c、T12.1–T12.14、T13.1–T13.13） |
 
 **修掉的两个真实缺陷**（都由上面的实测暴露，且都**不会**被自造密钥的单测发现）：
 

@@ -1397,6 +1397,35 @@ section("T12 来源提取：中英文边界与截断标记");
     const hardcoded = /truncated:\s*false\s*,/.test(src);
     check("T12.12", !hardcoded, "search() 不再把 truncated 硬编码为 false（源码级断言）");
   }
+  {
+    // 病态输入不得把提取变成二次复杂度。markdown 标题原本用 `[^\]]*`，
+    // 在**大量未闭合 `[`** 上是 O(n²)：8 万个 `[` 要 4 秒。给标题加上界后
+    // 降到线性。这里用一个远低于旧耗时、又留有机器差异余量的阈值钉住。
+    const n = 60000;
+    const t0 = Date.now();
+    I.extractSources("[".repeat(n));
+    const ms = Date.now() - t0;
+    check(
+      "T12.15",
+      ms < 1000,
+      `${n} 个未闭合 [ 的提取耗时 ${ms}ms（旧实现约 2.2s，加界后应远低于 1s）`,
+    );
+  }
+  {
+    // 上界不能误伤真实链接：正常标题、中文标题、成对括号 URL 都要照常提取。
+    const normal = only("见 [标题](https://ex.example/a) 完");
+    const cjk = only("见 [条目](https://zh.wikipedia.org/wiki/中文) 完");
+    const parens = only("见 [x](https://en.wikipedia.org/wiki/Foo_(bar)) 完");
+    const longTitle = only(`[${"x".repeat(150)}](https://ex.example/long)`);
+    check(
+      "T12.16",
+      normal[0] === "https://ex.example/a"
+        && cjk[0] === "https://zh.wikipedia.org/wiki/中文"
+        && parens[0] === "https://en.wikipedia.org/wiki/Foo_(bar)"
+        && longTitle[0] === "https://ex.example/long",
+      "标题上界不误伤真实链接（普通/中文/成对括号/150 字符标题均正常）",
+    );
+  }
 }
 
 // ── T13 加密凭据的「未来版本」诊断（v0.3.4 修复的误导性报错） ──
