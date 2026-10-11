@@ -74,10 +74,39 @@ echo
 # 3) 代理只作用于本次 git 调用，不落盘到 git config。
 GIT=(git -c "http.proxy=${PROXY}" -c "https.proxy=${PROXY}")
 
-# 4) 推送分支。
+# ⚠️ 必须推到**默认分支**，而不是当前 HEAD。
+#
+# 两处都依赖默认分支：
+#   - 市场 CI 从 raw.githubusercontent.com/<默认分支>/package.json 读 dsh.bundle；
+#   - npm 的 provenance 记录的是 tag 指向的提交。
+# 若在 feature 分支上跑本脚本而推 HEAD，远端默认分支仍停在旧版本，
+# 用户与市场看到的都是旧版 —— 而本地却以为已经发布。
+#
+# 默认分支名优先取远端 HEAD 指向（origin/HEAD），回落到 main。
+DEFAULT_BRANCH="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')"
+DEFAULT_BRANCH="${DEFAULT_BRANCH:-main}"
+CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+
+if [ "$CURRENT_BRANCH" != "$DEFAULT_BRANCH" ]; then
+  # 只有能快进时才允许直接推默认分支，避免把分叉历史强推上去。
+  if git merge-base --is-ancestor "origin/${DEFAULT_BRANCH}" HEAD; then
+    PUSH_REF="HEAD:${DEFAULT_BRANCH}"
+    echo "当前在 ${CURRENT_BRANCH} 分支；将快进推送到 ${DEFAULT_BRANCH}（可快进，安全）"
+  else
+    echo "✗ 当前分支 ${CURRENT_BRANCH} 与 origin/${DEFAULT_BRANCH} 已分叉，不能直接推送。" >&2
+    echo "  请先合并/变基到 ${DEFAULT_BRANCH}，或手工处理。" >&2
+    exit 1
+  fi
+else
+  PUSH_REF="HEAD"
+  echo "当前在默认分支 ${DEFAULT_BRANCH}"
+fi
+echo
+
+# 4) 推送。
 if [ "$DRY_RUN" = "1" ]; then
-  echo "[dry-run] 将执行：git push origin HEAD"
-  "${GIT[@]}" push --dry-run origin HEAD || {
+  echo "[dry-run] 将执行：git push origin ${PUSH_REF}"
+  "${GIT[@]}" push --dry-run origin "$PUSH_REF" || {
     echo "✗ 推送预演失败：多半是缺凭据。两种补救方式：" >&2
     echo "    a) 用 PAT：git remote set-url origin https://<用户名>:<PAT>@github.com/arnen7000/DSH-Workbuddy-WebSearch.git" >&2
     echo "    b) 改 SSH：git remote set-url origin git@github.com:arnen7000/DSH-Workbuddy-WebSearch.git" >&2
@@ -87,8 +116,8 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-echo "== 推送分支 =="
-"${GIT[@]}" push origin HEAD
+echo "== 推送分支（目标：${DEFAULT_BRANCH}）=="
+"${GIT[@]}" push origin "$PUSH_REF"
 
 # 5) 打 tag 并推送。tag 与 package.json 版本必须一致（CI 也卡这条）。
 if git rev-parse "$TAG" >/dev/null 2>&1; then
