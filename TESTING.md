@@ -45,7 +45,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 
 ## 2. 三层套件的分工
 
-### 2.1 `tools/regression.mjs` — 正常路径 + 契约（T1–T13；源态 / 安装态均 165 项）
+### 2.1 `tools/regression.mjs` — 正常路径 + 契约（T1–T13；源态 / 安装态均 171 项）
 
 被测对象：**已安装的插件实体目录**（`link:` junction 或 `.tgz` 解包后的目录均算）。
 无凭据时会自动把 T3/T5 降级为 `WARN`，因此 CI 上恒可跑。
@@ -63,8 +63,8 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 | T9 | 零依赖自足 | 三个自带模块可独立加载、只依赖 `node:` 与相对路径、AES 往返；**key helper 的绑定契约（T9.15/T9.16 源码断言：必须是 `_linkedBinding("electron_browser_workbuddy_storage").loggerGet()`）**、真实载荷形状兼容（T9.17/T9.18）、**provider id 冲突的可操作报错（T9.19/T9.20/T9.21：带冲突 id + 给出排查步骤 + 不点名任何具体插件）** |
 | T10 | 平台覆盖 | win32/darwin 候选路径、cpu 约束、**Windows 安装根有界扫描（T10.13–T10.23）**、真实二进制探测（T10.24，仅 win32）、**卸载注册表发现（T10.25–T10.32：`DisplayIcon` 三形态、只取三个值名、单候选命中、多候选报歧义、布局校验拦截、产品形状互不匹配、按进程只查一轮、env 优先于注册表）**、**macOS Spotlight 发现（T10.33–T10.48：`mdfind`/`plutil` 绝对路径调用、bundle id 身份校验、缺 `Contents/MacOS/Electron` 与不可执行均被拒、多候选报歧义、索引重复行与软链接去重、两版 bundle id 互不匹配、非法入参不抛、查询只跑一轮、查询失败不缓存、env 优先于 Spotlight、`macosDiscovery:false` 跳过、win32 不触碰该链、静态接线断言）** |
 | T11 | 区域绑定 | 凭据形态识别（absent/plain/encrypted）、`auto` 选定规则、显式指定的强约束、**绑定粘性**、跨版凭据拒绝（`WB_SEARCH_CREDENTIAL_REGION_MISMATCH`）、`available()` 只看绑定那一版，以及「不跨版回落」的源码级断言 |
-| T12 | 来源提取的中英文边界 | **汉字/假名/谚文作为裸链定界符（T12.1–T12.3）**、markdown 链接保留非 ASCII 路径与 IDN/IPv6（T12.4/T12.4d）、**刻意取舍的护栏（T12.4b/T12.4c：裸链中文路径截短、裸链 IDN/IPv6 取不到 —— 钉住它们，防止有人「顺手修好」而把中文吞并引回来）**、反引号与 markdown 强调记号剥离（T12.5/T12.6）、英文 URL 含 query/fragment 不回归（T12.7/T12.8）、**`capped` 语义与边界（T12.9–T12.11、T12.13、T12.14：25 条→capped、恰好 20 条→不误报、markdown 占满时裸链被丢弃必须上报、markdown 优先不被挤掉）**、`truncated` 不硬编码的源码断言（T12.12） |
-| T13 | 未知加密算法版本 | **`suite=1` 仍走正常解密（T13.1）**、`suite=2` 仍被识别为凭据文档而非「没凭据」（T13.2/T13.3）、畸形信封与「算法太新」分开报（T13.4）、错误码为 `WB_SEARCH_CREDENTIAL_UNSUPPORTED_FORMAT` 且文案明确否认「未登录」（T13.5–T13.7）、明文凭据不受影响（T13.8）、**混合形态：明文 `accessToken` + 未知格式 `refreshToken` 仍返回可用 token（T13.9，防「有信封解不开就整体拒绝」这一回归）、两个 token 都是未知信封时如实报格式不支持（T13.10）** |
+| T12 | 来源提取的中英文边界 | **汉字/假名/谚文作为裸链定界符（T12.1–T12.3）**、markdown 链接保留非 ASCII 路径与 IDN/IPv6（T12.4/T12.4d）、**成对括号保留（T12.4e：`.../Foo_(bar)` 不被截断）、括号配对判断（T12.4f）、括号包裹的裸链不被丢弃（T12.4g）**、**刻意取舍的护栏（T12.4b/T12.4c：裸链中文路径截短、裸链 IDN/IPv6 取不到 —— 钉住它们，防止有人「顺手修好」而把中文吞并引回来）**、反引号与 markdown 强调记号剥离（T12.5/T12.6）、英文 URL 含 query/fragment 不回归（T12.7/T12.8）、**`capped` 语义与边界（T12.9–T12.11、T12.13、T12.14：25 条→capped、恰好 20 条→不误报、markdown 占满时裸链被丢弃必须上报、markdown 优先不被挤掉）**、`truncated` 不硬编码的源码断言（T12.12） |
+| T13 | 未知加密算法版本与凭据形态 | **`suite=1` 仍走正常解密（T13.1）**、`suite=2` 仍被识别为凭据文档而非「没凭据」（T13.2/T13.3）、畸形信封与「算法太新」分开报（T13.4）、错误码为 `WB_SEARCH_CREDENTIAL_UNSUPPORTED_FORMAT` 且文案明确否认「未登录」（T13.5–T13.7）、明文凭据不受影响（T13.8）、**混合形态：明文 `accessToken` + 未知格式 `refreshToken` 仍返回可用 token（T13.9）、明文 + **合法但解不开**的 suite-1 信封同样返回可用 token（T13.11，判据是「最终 accessToken 是否为空」而非「有没有解不开的东西」）、两个 token 都是未知信封时如实报格式不支持（T13.10）、损坏信封报 `WB_SEARCH_CREDENTIAL_MALFORMED` 且文案指向「重新登录」而非「升级插件」（T13.12/T13.13）** |
 
 > **为什么 T9.15/T9.16 是源码断言而不是行为测试**：key helper 是**另一个进程**里跑的私有绑定调用，
 > 本进程无法用自造密钥验证它。在真实 5.6.2 设备上实测发现，helper 曾把绑定名写成
@@ -106,7 +106,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 >
 > **S8 保护的是「体系化」这件事本身**：如果哪天有人删了 `TESTING.md`、或把套件从 CI 里摘掉，S8 会立刻红——防止「又回到每次重新推演」的状态。
 
-### 2.3 `tools/check-github-meta.mjs` — GitHub 元数据自检（G1–G9，40 项）
+### 2.3 `tools/check-github-meta.mjs` — GitHub 元数据自检（G1–G9，39 项）
 
 被测对象：**仓库根目录**。这一层不测插件运行时，而是测**仓库在 GitHub 上的"门面"是否齐备且格式合法**——
 缺文件只会掉勾，但 **Issue 表单格式错会让 GitHub 整份拒收**，所以要钉住。

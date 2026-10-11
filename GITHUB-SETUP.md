@@ -80,7 +80,7 @@ CODE_OF_CONDUCT.md                           # Contributor Covenant v2.1
 .github/ISSUE_TEMPLATE/feature_request.yml   # 功能请求表单（6 项，含"不接管抓取"提示）
 .github/ISSUE_TEMPLATE/config.yml            # 关闭空白 Issue，引导先读文档
 .github/dependabot.yml                       # 只盯 GitHub Actions
-tools/check-github-meta.mjs                  # GitHub 元数据自检（G1–G9，40 项）
+tools/check-github-meta.mjs                  # GitHub 元数据自检（G1–G9，39 项）
 ```
 
 **改动文件**
@@ -367,7 +367,7 @@ node tools/check-github-meta.mjs "$PWD"
 **改动 README 后的必做动作**
 
 ```bash
-node tools/check-github-meta.mjs "$PWD"   # G1–G9，40 项
+node tools/check-github-meta.mjs "$PWD"   # G1–G9，39 项
 node tools/regression.mjs "$PWD"          # T1–T13
 node tools/scenarios.mjs "$PWD"           # S1–S9
 node .local/check-links.mjs "$PWD"        # L1–L4（L4 = README 目录完整性，最易被漏）

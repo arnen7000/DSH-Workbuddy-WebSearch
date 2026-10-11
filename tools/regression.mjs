@@ -1199,6 +1199,43 @@ section("T12 来源提取：中英文边界与截断标记");
     );
   }
   {
+    // URL 里可以合法含**成对括号**（维基百科消歧义页是典型）。
+    // 早期 markdown 正则用 `[^)\s]+`，在第一个 `)` 处截断 → 产出括号不配对的死链。
+    const got = only("见 [x](https://en.wikipedia.org/wiki/Foo_(bar)) 完");
+    check(
+      "T12.4e",
+      got.length === 1 && got[0] === "https://en.wikipedia.org/wiki/Foo_(bar)",
+      `markdown 链接保留成对括号（实得 ${JSON.stringify(got)}）`,
+    );
+  }
+  {
+    // 收尾清理必须**按括号是否配对**决定剥不剥：配对的是 URL 一部分，落单的是正文标点。
+    //
+    // ⚠️ 括号保留只在 **markdown 形态**可验：裸链正则本身排除了 `()`（见 T12.4c 的
+    // 同类取舍），所以裸链里的括号取不到，与收尾清理无关。两条路径要分开断言。
+    const mdPaired = only("见 [x](https://ex.example/x(a)) 完");
+    const mdDangling = only("见 [x](https://ex.example/x) 完");
+    const bareDangling = only("见 https://ex.example/x) 完");
+    check(
+      "T12.4f",
+      mdPaired[0] === "https://ex.example/x(a)"
+        && mdDangling[0] === "https://ex.example/x"
+        && bareDangling[0] === "https://ex.example/x",
+      `括号配对判断正确（markdown 配对保留 ${JSON.stringify(mdPaired)} / markdown 无括号 ${JSON.stringify(mdDangling)} / 裸链落单剥离 ${JSON.stringify(bareDangling)}）`,
+    );
+  }
+  {
+    // 括号包裹的裸链**不能丢**。早期用 `(?<!\()` 避重，把这种常见写法一并丢掉了。
+    const half = only("见 (https://ex.example/3) 完");
+    const full = only("见（https://ex.example/4）完");
+    const bracket = only("见【https://ex.example/5】完");
+    check(
+      "T12.4g",
+      half[0] === "https://ex.example/3" && full[0] === "https://ex.example/4" && bracket[0] === "https://ex.example/5",
+      `括号包裹的裸链仍被提取（半角 ${JSON.stringify(half)} / 全角 ${JSON.stringify(full)} / 方括号 ${JSON.stringify(bracket)}）`,
+    );
+  }
+  {
     // ⚠️ 以下是**刻意保留的取舍**，不是待修的缺陷。若有人"顺手修好"它们，
     // 往往会把中文吞并（T12.1–T12.3）重新引回来 —— 所以在这里钉住。
     //
@@ -1250,11 +1287,16 @@ section("T12 来源提取：中英文边界与截断标记");
     );
   }
   {
+    // 英文句读仍被剥离；**括号包裹的裸链现在也会被提取**（v0.3.4 修复：
+    // 早期用 `(?<!\()` 避重，把 `(https://…)` 这种常见写法一并丢掉了）。
     const got = only("a https://ex.example/1, b https://ex.example/2. c (https://ex.example/3)");
     check(
       "T12.8",
-      got.length === 2 && got.includes("https://ex.example/1") && got.includes("https://ex.example/2"),
-      `英文句读与成对括号仍被剥离（实得 ${JSON.stringify(got)}）`,
+      got.length === 3
+        && got.includes("https://ex.example/1")
+        && got.includes("https://ex.example/2")
+        && got.includes("https://ex.example/3"),
+      `英文句读剥离且括号包裹的裸链不再丢失（实得 ${JSON.stringify(got)}）`,
     );
   }
 
@@ -1441,6 +1483,62 @@ section("T13 未知加密算法版本 → 不得误报「未登录」");
         "T13.10",
         cred?.undecryptable === true && cred?.reason === "unsupported-suite",
         `两个 token 都是未知信封 → undecryptable(unsupported-suite)（实得 ${cred?.undecryptable === true ? cred.reason : JSON.stringify(cred)?.slice(0, 60)}）`,
+      );
+    } finally {
+      try { rmSync(tmp, { recursive: true, force: true }); } catch {}
+    }
+  }
+  {
+    // ⚠️ 审阅发现的**同类残留**：T13.9 只覆盖「refreshToken 是**解析失败**的信封」，
+    // 而 refreshToken 是**合法但解不开**（suite=1 且本机找不到 Electron）时，
+    // 旧判据 `parsed.encrypted !== true` 会让它走解密路径、把整份文件拒掉 ——
+    // 明文 accessToken 明明可用。这是同一个思维误区「有解不开的东西就整体拒绝」，
+    // 只是触发条件不同。正确判据只有一个：**最终 accessToken 是否为空**。
+    const tmp = mkdtempSync(join(tmpdir(), "wb-t13-legal-"));
+    try {
+      const p = join(tmp, "legal-envelope.info");
+      writeFileSync(p, JSON.stringify({
+        auth: { accessToken: "PLAINTEXT-USABLE", refreshToken: wrapperFor(1), domain: "copilot.tencent.com" },
+        account: { uid: "u1" },
+      }));
+      const cred = await I.readCredentialFile(p, { variant: null });
+      check(
+        "T13.11",
+        cred?.accessToken === "PLAINTEXT-USABLE" && cred?.undecryptable !== true,
+        `明文 token + **合法 suite=1** 信封（本机解不开）→ 仍返回可用 token（实得 ${cred?.undecryptable === true ? "undecryptable(" + cred.reason + ")" : cred?.accessToken}）`,
+      );
+    } finally {
+      try { rmSync(tmp, { recursive: true, force: true }); } catch {}
+    }
+  }
+  {
+    // 损坏的信封必须与「算法版本更新」分开报：前者重新登录即可，后者要等插件更新。
+    // 早先把两者并进同一支，于是文件损坏的用户被告知「去升级插件、去提 Issue」。
+    const tmp = mkdtempSync(join(tmpdir(), "wb-t13-corrupt-"));
+    try {
+      const p = join(tmp, "corrupt.info");
+      writeFileSync(p, JSON.stringify({
+        auth: {
+          accessToken: { $wbEncrypted: 1, envelope: Buffer.from("hello").toString("base64") },
+          refreshToken: "x",
+          domain: "copilot.tencent.com",
+        },
+        account: { uid: "u1" },
+      }));
+      let err;
+      try {
+        await I.resolveCredentialForVariant({ variant: I.VARIANTS[1], candidates: [p] });
+      } catch (e) { err = e; }
+      check(
+        "T13.12",
+        String(err?.code ?? "") === "WB_SEARCH_CREDENTIAL_MALFORMED",
+        `损坏信封 → WB_SEARCH_CREDENTIAL_MALFORMED（实得 ${err?.code ?? "未抛"}）`,
+      );
+      const msg = String(err?.message ?? "");
+      check(
+        "T13.13",
+        !/版本比本插件认识的更新/.test(msg) && /重新登录/.test(msg),
+        "损坏信封的文案指向「重新登录」，不再误报「算法版本更新」",
       );
     } finally {
       try { rmSync(tmp, { recursive: true, force: true }); } catch {}
