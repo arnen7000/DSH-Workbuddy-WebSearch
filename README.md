@@ -344,7 +344,7 @@ Electron 二进制定位策略，都源自该项目的逆向与验证工作（MI
 
 # 2) 跑三套检查 —— 必须全绿才能发
 node tools/regression.mjs "$PWD"        # 165 项：契约、凭据、区域、平台、提取边界
-node tools/scenarios.mjs  "$PWD"        #  42 项：异常路径（断网/401/abort/凭据损坏…）
+node tools/scenarios.mjs  "$PWD"        #  45 项：异常路径（断网/401/abort/凭据损坏…）
 node tools/check-github-meta.mjs "$PWD" #  仓库元信息与「不夹带本机信息」红线
 
 # 3) 改版本号（package.json 的 version 与 versionNote）

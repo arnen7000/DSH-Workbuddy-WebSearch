@@ -19,6 +19,8 @@
 
 import { pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 const targetDir = resolve(process.argv[2] ?? new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 const entryUrl = pathToFileURL(join(targetDir, "lib", "index.js")).href;
@@ -237,6 +239,71 @@ console.log("\nS4  凭据缺失 / 损坏（用户没登录、文件半损坏）"
     }
   }
   check("S4.1", "凭据解析对 6 种垃圾输入均安全（不抛/不造 token）", allSafe, details.join("; "));
+
+  // S4.1b 未知加密算法版本（suite 比插件新）必须报「格式不支持」，
+  // 而不是退化成「没凭据」（那会让用户收到「请去桌面端登录」，
+  // 而重登根本没用）。这里在异常路径层再钉一次，与 T13 互补。
+  {
+    const KID = "9127dea1b44020a7";
+    const b64 = (n) => Buffer.alloc(n, 1).toString("base64");
+    const envFor = (suite) => ({
+      $wbEncrypted: 1,
+      envelope: Buffer.from(JSON.stringify({
+        suite, keyId: KID, nonce: b64(12), authTag: b64(16), ciphertext: b64(32),
+      })).toString("base64"),
+    });
+    const futureDoc = JSON.stringify({
+      auth: { accessToken: envFor(2), refreshToken: envFor(2), domain: "www.workbuddy.ai" },
+      account: { uid: "u1" },
+    });
+    const parsed = __internals.parseWorkBuddyAuth(futureDoc);
+    const recognized = parsed !== undefined && parsed?.envelopeIssue?.reason === "unsupported-suite";
+    check(
+      "S4.1b",
+      "未知 suite 的凭据仍被识别并标为 unsupported-suite（不退化成「没凭据」）",
+      recognized,
+      `envelopeIssue=${JSON.stringify(parsed?.envelopeIssue)}`,
+    );
+
+    // 反向：明文 token 可用时不得因 refreshToken 格式新而整体拒绝。
+    // ⚠️ 必须走 readCredentialFile（真正决定「采不采信」的那一层），
+    // 只测 parseWorkBuddyAuth 抓不到这个缺陷 —— 拒绝逻辑在读取层。
+    const s41Dir = mkdtempSync(join(tmpdir(), "dsh-wb-s41-"));
+    try {
+      const mixedDoc = JSON.stringify({
+        auth: { accessToken: "USABLE-PLAIN", refreshToken: envFor(2), domain: "www.workbuddy.ai" },
+        account: { uid: "u1" },
+      });
+      const mixedFile = join(s41Dir, "mixed-future.info");
+      writeFileSync(mixedFile, mixedDoc);
+      let mixedCred;
+      try {
+        mixedCred = await __internals.readCredentialFile(mixedFile, { variant: null });
+      } catch { mixedCred = undefined; }
+      check(
+        "S4.1c",
+        "明文 accessToken + 未知格式 refreshToken → 仍返回可用 token（不被整体拒绝）",
+        mixedCred?.accessToken === "USABLE-PLAIN" && mixedCred?.undecryptable !== true,
+        `undecryptable=${mixedCred?.undecryptable === true ? mixedCred.reason : "false"} token=${JSON.stringify(mixedCred?.accessToken)}`,
+      );
+
+      // 两个 token 都是未知信封时，必须如实报「格式不支持」而不是静默当没凭据。
+      const bothFile = join(s41Dir, "both-future.info");
+      writeFileSync(bothFile, futureDoc);
+      let bothCred;
+      try {
+        bothCred = await __internals.readCredentialFile(bothFile, { variant: null });
+      } catch { bothCred = undefined; }
+      check(
+        "S4.1d",
+        "两个 token 都是未知信封 → undecryptable(unsupported-suite)，不静默当没凭据",
+        bothCred?.undecryptable === true && bothCred?.reason === "unsupported-suite",
+        `reason=${bothCred?.undecryptable === true ? bothCred.reason : JSON.stringify(bothCred)?.slice(0, 40)}`,
+      );
+    } finally {
+      try { rmSync(s41Dir, { recursive: true, force: true }); } catch {}
+    }
+  }
 
   // S4.2 探针函数对不存在的文件返回 false 而非抛错
   let probeSafe = true;
