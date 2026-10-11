@@ -350,20 +350,26 @@ node tools/check-github-meta.mjs "$PWD" #  仓库元信息与「不夹带本机�
 # 3) 改版本号（package.json 的 version 与 versionNote）
 #    versionNote 是给人和给机器看的一句话全量说明，请一并更新。
 
-# 4) 提交并推送
-git commit -am "fix: ..." && git push
+# 4) 提交并推到**默认分支**（main）
+git commit -am "fix: ..." && git push origin HEAD:main
 
 # 5) 打 tag 并**发布成 Release** —— 这一步才触发发布
 git tag -a v0.3.5 -m "Release v0.3.5" && git push origin v0.3.5
 #    然后 GitHub 上 Releases → Draft a new release → 选 tag v0.3.5 → Publish release
 ```
 
+> ⚠️ **必须推到默认分支（main），不能只推 feature 分支。** 市场 CI 是从
+> `raw.githubusercontent.com/<默认分支>/package.json` 读 `dsh.bundle` 的 ——
+> 默认分支没更新，市场和用户看到的就还是旧版。
+>
 > ⚠️ **推 tag 不会触发发布。** `.github/workflows/publish.yml` 的触发条件是
 > `release: types: [published]`（外加手动 `workflow_dispatch`），**没有** `push: tags`。
 > 必须把 tag 发布成 **Release**，CI 才会跑。
 >
-> 本机可直接用 `bash contrib/publish.sh` 走完 4–5 步（自动注入代理、发前跑三套检查、
-> tag 与 `package.json` 版本一致性校验；装了 `gh` 时会自动建 Release）。
+> 本机可直接用 `bash contrib/publish.sh` 走完 4–5 步：它会自动注入代理、
+> 跑完三套检查、**把当前分支快进推送到默认分支**（分叉则明确报错，绝不强推）、
+> 校验 tag 与 `package.json` 版本一致，并在装了 `gh` 时自动创建 Release。
+> 建议先 `bash contrib/publish.sh --dry-run` 看一眼会做什么。
 
 **为什么发布这么省事**：`.github/workflows/publish.yml` 用 **npm 可信发布（OIDC）**，
 不需要任何长期 npm token；工作流里还有一道**版本一致性闸门**，tag 与 `package.json`
