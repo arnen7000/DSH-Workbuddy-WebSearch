@@ -1040,6 +1040,36 @@ section("T11 区域绑定与「拒绝混用」");
     check("T11.3", I.variantCredentialState(cnVariant, {}, { candidates: only(encCn, missingPath) }) === "encrypted",
       "$wbEncrypted 信封 → encrypted");
 
+    // 未来算法版本（suite 比认识的更新）必须**仍被算作有凭据**。
+    // 否则 available() 会返回 false，宿主只给笼统的「provider 不可用」，
+    // 用户就看不到「格式比插件新」这条可操作的指引。
+    {
+      const futureEnvelope = Buffer.from(JSON.stringify({
+        suite: 2,
+        keyId: Buffer.alloc(8, 6).toString("hex"),
+        nonce: Buffer.alloc(12, 6).toString("base64"),
+        authTag: Buffer.alloc(16, 6).toString("base64"),
+        ciphertext: Buffer.alloc(8, 6).toString("base64"),
+      })).toString("base64");
+      const futureCn = write("cn-future.info", {
+        auth: {
+          accessToken: { $wbEncrypted: 1, envelope: futureEnvelope },
+          refreshToken: { $wbEncrypted: 1, envelope: futureEnvelope },
+        },
+        account: { uid: "u-cn" },
+      });
+      check(
+        "T11.3b",
+        I.variantCredentialState(cnVariant, {}, { candidates: only(futureCn, missingPath) }) === "encrypted",
+        "未知 suite 的信封 → 仍算有凭据（不是 absent，好让 search() 给出格式指引）",
+      );
+      check(
+        "T11.3c",
+        I.selectVariant({}, { candidates: only(futureCn, missingPath) })?.region === "cn",
+        "auto 区域选择：未来格式凭据也算可用版本（不会因认不出算法就跳过该版本）",
+      );
+    }
+
     // 显式指定区域：即使那一版没有凭据也照样选中（报错才会指对版本）
     mod.configure({ region: "cn" });
     check("T11.4", I.selectVariant({}, { candidates: only(missingPath, plainAi) })?.region === "cn",
