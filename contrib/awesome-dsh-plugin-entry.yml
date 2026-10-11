@@ -1,0 +1,21 @@
+# Submission entry for https://github.com/awesome-dsh-plugin/awesome-dsh-plugin
+#
+# HOW TO USE: open a PR against awesome-dsh-plugin/awesome-dsh-plugin and add this
+# content as ONE NEW FILE at exactly this path (filename must equal slugFor(url)):
+#
+#     data/plugins/arnen7000__DSH-Workbuddy-WebSearch.yml
+#
+# That single file is the whole submission. Do NOT edit README.md / README.zh.md
+# (generated), do NOT add an `npm:` key (auto-resolved and rejected if hand-written),
+# do NOT add `version` / `stars` / `downloads` / `install` / `added` /
+# `capabilities` / `capabilityRedLines` / `page` (all CI-generated).
+#
+# Only these 5 keys are legal: url, name, category, description, tarball.
+# Validated locally against scripts/lib/entries.mjs -> validateEntries(): 0 problems.
+
+url: https://github.com/arnen7000/DSH-Workbuddy-WebSearch
+name: arnen7000/DSH-Workbuddy-WebSearch
+category: browser
+description:
+  en: 'Web search provider for the built-in web_search tool that reuses the WorkBuddy desktop app sign-in, so searches run on the WorkBuddy account without an API key and come back as cited summaries.'
+  zh: '把 WorkBuddy 桌面 App 的网络搜索接入内置 web_search 工具的搜索 provider：复用桌面端登录态，无需 API Key，返回带引用来源的综述文本。'
