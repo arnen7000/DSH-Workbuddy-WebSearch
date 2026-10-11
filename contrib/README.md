@@ -6,8 +6,12 @@
 | 文件 | 用途 |
 |---|---|
 | [`awesome-dsh-plugin-entry.yml`](./awesome-dsh-plugin-entry.yml) | 上架条目本体（放进上游 `data/plugins/` 的那份内容） |
+| [`submit-market.sh`](./submit-market.sh) | **一键提交上架 PR**（在临时目录里加条目、推到你的 fork、打印开 PR 链接） |
 | [`market-pr.md`](./market-pr.md) | **提 PR 时直接复制粘贴**的标题与描述，含提交前自查清单 |
 | [`publish.sh`](./publish.sh) | 一键推送 + 打 tag + 建 Release（Release 才触发 npm 发布） |
+
+> 两个脚本都支持 `--dry-run`，建议先跑它看一眼会做什么：
+> `bash contrib/publish.sh --dry-run`、`bash contrib/submit-market.sh --dry-run`。
 
 ## `awesome-dsh-plugin-entry.yml` —— DSH 插件市场上架条目
 
