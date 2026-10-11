@@ -65,7 +65,19 @@ if (!bundles.includes(PLUGIN_NAME)) {
   console.log("[ok] bundles registered");
 }
 
+// 核验命令按平台给出：插件在 Windows 与 macOS 上都能用（macOS 为实验性），
+// 而早先这里写死了 Windows 的 `set` / `findstr`，Mac 用户照着敲必然失败。
+const isWindows = process.platform === "win32";
+const verifyLines = isWindows
+  ? [
+    `  set DSH_HOME=${dshHome.replaceAll("/", "\\")}`,
+    `  node "<dsh安装根>/node_modules/@deepseek-ai/dsh/lib/bin.js" --profile ${profileName} --dump-config | findstr /I "workbuddy-websearch searchProvider"`,
+  ]
+  : [
+    `  export DSH_HOME="${dshHome}"`,
+    `  node "<dsh安装根>/node_modules/@deepseek-ai/dsh/lib/bin.js" --profile ${profileName} --dump-config | grep -i "workbuddy-websearch\\|searchProvider"`,
+  ];
+
 console.log(`
 核验（应能看到 searchProvider: workbuddy-agentic 与 id: web-workbuddy-websearch）:
-  set DSH_HOME=${dshHome.replaceAll("/", "\\")}
-  node "<dsh安装根>/node_modules/@deepseek-ai/dsh/lib/bin.js" --profile ${profileName} --dump-config | findstr /I "workbuddy-websearch searchProvider"`);
+${verifyLines.join("\n")}`);
