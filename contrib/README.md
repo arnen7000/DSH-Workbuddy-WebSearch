@@ -74,6 +74,28 @@
 **已用上游仓库的真实校验器验证**：把条目放进 `data/plugins/` 后跑
 `readEntries` + `validateEntries`，全库 4490 条 **problems = 0**。
 
+### 用户点「安装」时市场到底装什么
+
+用市场自己的 `installTargetFor()`（`dshmarket/lib/sources.js`）实算，两种情形：
+
+| 时机 | `installTargetFor(entry)` | 说明 |
+|---|---|---|
+| 刚合并、CI 还没填 `npm` 字段 | `github:arnen7000/DSH-Workbuddy-WebSearch` | 从 GitHub 源码装 |
+| CI 填好 `npm` 后（通常一天内） | `dsh-workbuddy-websearch` | 从 npm 装（**优先**） |
+
+**两条路径都实测过**，装完都能真实搜索：
+
+- `github:` 路径：`dsh plugin add github:arnen7000/DSH-Workbuddy-WebSearch`
+  → 装到 0.3.3，`--dump-config` 显示 `searchProvider: workbuddy-agentic`，真实搜索返回 20 条来源；
+- npm 路径：见 README「快速开始」，`add dsh-workbuddy-websearch` 同理。
+
+> 所以**上架后立刻就能用**，不必等 CI 把 `npm` 字段填上 —— 最坏情况是那几天
+> 用户装的是 GitHub 源码而非 npm 包，功能完全一致。
+>
+> ⚠️ 一个副作用值得知道：`github:` 路径装的是**默认分支的当前提交**，
+> 而 npm 路径装的是**已发布的 tag**。若默认分支上有未发布的改动，
+> 两条路径的内容可能不同。发布时请确保先推默认分支、再发 Release。
+
 ### 描述怎么写才不会被退回
 
 维护者会**读代码核对描述里的每一条声明**，所以描述只写可验证的事实，
