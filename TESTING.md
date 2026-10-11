@@ -45,7 +45,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 
 ## 2. 三层套件的分工
 
-### 2.1 `tools/regression.mjs` — 正常路径 + 契约（T1–T13；源态 / 安装态均 171 项）
+### 2.1 `tools/regression.mjs` — 正常路径 + 契约（T1–T13；源态 / 安装态均 172 项）
 
 被测对象：**已安装的插件实体目录**（`link:` junction 或 `.tgz` 解包后的目录均算）。
 无凭据时会自动把 T3/T5 降级为 `WARN`，因此 CI 上恒可跑。

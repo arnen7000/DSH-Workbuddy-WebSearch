@@ -1236,6 +1236,47 @@ section("T12 来源提取：中英文边界与截断标记");
     );
   }
   {
+    // 宽松化的 markdown 正则（为支持成对括号而不再强制收尾 `)`）**不得吞并后续 URL**。
+    // 这是放宽正则最直接的风险，必须钉住。
+    //
+    // ⚠️ 断言必须**精确比对**，不能用 includes()：吞并后第一条会变成
+    // "https://a.example/1 https://b.example/2"，而 includes("https://a.example/1")
+    // 依然是 true —— 那样写等于恒真，抓不到任何东西（这是实测过的教训）。
+    const cases = [
+      "[x](https://a.example/1) https://b.example/2",
+      "[x](https://a.example/1)https://b.example/2",
+      "参考 [x](https://a.example/1)，另见 https://b.example/2",
+      "[x](https://a.example/1) 与 [y](https://b.example/2)",
+    ];
+    const bad = [];
+    for (const c of cases) {
+      const got = only(c);
+      const exact = got.length === 2
+        && got[0] === "https://a.example/1"
+        && got[1] === "https://b.example/2";
+      if (!exact) bad.push(`${JSON.stringify(c)} → ${JSON.stringify(got)}`);
+    }
+    // 关键：**畸形 markdown（缺收尾括号）**才是真正的吞并风险 ——
+    // 此时正则没有 `)` 作为边界，全靠字符类里的 `\s` 收住。
+    // 若把 `\s` 从字符类去掉，两条 URL 会粘成一条。
+    for (const c of [
+      "[x](https://a.example/1 https://b.example/2)",   // 有收尾 )，但中间混了第二条
+      "[x](https://a.example/1 https://b.example/2",    // 完全没闭合
+    ]) {
+      const got = only(c);
+      const exact = got.length === 2
+        && got[0] === "https://a.example/1"
+        && got[1] === "https://b.example/2";
+      if (!exact) bad.push(`${JSON.stringify(c)} → ${JSON.stringify(got)}`);
+    }
+    check(
+      "T12.4h",
+      bad.length === 0,
+      "宽松 markdown 正则不吞并后续 URL（6 种相邻/畸形写法均各自完整且无粘连）",
+      bad.join(" | "),
+    );
+  }
+  {
     // ⚠️ 以下是**刻意保留的取舍**，不是待修的缺陷。若有人"顺手修好"它们，
     // 往往会把中文吞并（T12.1–T12.3）重新引回来 —— 所以在这里钉住。
     //
