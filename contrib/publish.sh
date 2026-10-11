@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 #
-# 一键推送 + 打 tag（推送后由 GitHub CI 自动发布到 npm）。
+# 一键推送 + 打 tag + 建 Release（Release 才会触发 CI 发布到 npm）。
 #
 # 用法：
-#   bash contrib/publish.sh              # 推 main + 打 vX.Y.Z tag 并推送
+#   bash contrib/publish.sh              # 推 main + 打 vX.Y.Z tag + 建 Release
 #   bash contrib/publish.sh --dry-run    # 只看会做什么，不改动远端
+#
+# ⚠️ 为什么最后一步是「建 Release」而不是「推 tag」：
+#   .github/workflows/publish.yml 的触发条件是 release: types: [published]
+#   （外加 workflow_dispatch），**没有** push/tags 触发 —— 只推 tag 不会发布。
 #
 # 为什么需要它：本机 git 不走系统代理，而 GitHub 直连不通。
 # 脚本自动为本次命令注入代理（不写入全局配置，不改你的 git config）。
@@ -94,11 +98,32 @@ else
   echo "已创建标签 $TAG"
 fi
 
-echo "== 推送标签（触发 CI 发布到 npm）=="
+echo "== 推送标签 =="
 "${GIT[@]}" push origin "$TAG"
 
+# ⚠️ 关键：**推 tag 本身不会触发发布**。
+# .github/workflows/publish.yml 的触发条件是 `release: types: [published]`
+# 与 `workflow_dispatch`，**没有** push/tags 触发。所以必须再去 GitHub
+# 把这个 tag 发布成 Release，CI 才会跑起来。
+#
+# 若装了 gh CLI 且有权限，下面这段会自动建 Release；否则打印手工步骤。
 echo
-echo "✓ 完成。接下来："
-echo "  1. 到 GitHub 的 Actions 看 publish 工作流是否成功（OIDC 可信发布）"
-echo "  2. 到 Releases 用同一个 $TAG 发布 Release（CI 亦由 tag 推送触发）"
+if command -v gh >/dev/null 2>&1; then
+  echo "== 用 gh 创建 Release（这一步才真正触发发布）=="
+  if gh release create "$TAG" --title "$TAG" --notes "见 package.json 的 versionNote 与 CHANGELOG 章节。"; then
+    echo "✓ Release 已创建，publish 工作流应已开始运行"
+  else
+    echo "⚠ gh release create 失败，请到网页端手工创建 Release" >&2
+  fi
+else
+  echo "⚠ 未检测到 gh CLI —— 还需要一步手工操作才能发布："
+  echo "    打开 https://github.com/arnen7000/DSH-Workbuddy-WebSearch/releases/new?tag=${TAG}"
+  echo "    选择 tag ${TAG}，标题填 ${TAG}，点 Publish release"
+  echo "  （publish.yml 只监听 release published，推 tag 不会触发它）"
+fi
+
+echo
+echo "✓ 推送完成。接下来："
+echo "  1. 确认 Release 已发布（上一步）—— 否则 CI 不会跑"
+echo "  2. 到 Actions 看 publish 工作流是否成功（OIDC 可信发布）"
 echo "  3. npm 上确认：https://www.npmjs.com/package/dsh-workbuddy-websearch"

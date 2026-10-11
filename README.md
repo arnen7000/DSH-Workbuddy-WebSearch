@@ -353,14 +353,23 @@ node tools/check-github-meta.mjs "$PWD" #  仓库元信息与「不夹带本机�
 # 4) 提交并推送
 git commit -am "fix: ..." && git push
 
-# 5) 发 Release（tag 必须等于 package.json 的 version，CI 会卡这一条）
-#    GitHub 上 Releases → Draft a new release → tag 填 0.3.5 → Publish
-#    发布后 CI 自动：跑上面三套检查 → 用 OIDC 可信发布到 npm（带 provenance 签名）
+# 5) 打 tag 并**发布成 Release** —— 这一步才触发发布
+git tag -a v0.3.5 -m "Release v0.3.5" && git push origin v0.3.5
+#    然后 GitHub 上 Releases → Draft a new release → 选 tag v0.3.5 → Publish release
 ```
 
-**为什么只需要发 Release**：`.github/workflows/publish.yml` 用 **npm 可信发布（OIDC）**，
+> ⚠️ **推 tag 不会触发发布。** `.github/workflows/publish.yml` 的触发条件是
+> `release: types: [published]`（外加手动 `workflow_dispatch`），**没有** `push: tags`。
+> 必须把 tag 发布成 **Release**，CI 才会跑。
+>
+> 本机可直接用 `bash contrib/publish.sh` 走完 4–5 步（自动注入代理、发前跑三套检查、
+> tag 与 `package.json` 版本一致性校验；装了 `gh` 时会自动建 Release）。
+
+**为什么发布这么省事**：`.github/workflows/publish.yml` 用 **npm 可信发布（OIDC）**，
 不需要任何长期 npm token；工作流里还有一道**版本一致性闸门**，tag 与 `package.json`
 不一致会直接拒绝发布，避免「tag 写 0.4.0、实际发出去 0.3.9」这种不可逆错误。
+0.3.3 即以此链路发布，npm 上可查到 SLSA provenance 签名（来源仓库 = 本仓库、
+来源工作流 = `.github/workflows/publish.yml`、触发 = `refs/tags/v0.3.3`）。
 
 **用户怎么升级**：市场里点「升级」，或 `dsh plugin --profile web add dsh-workbuddy-websearch@<新版本号>`
 （见[快速开始](#快速开始)里关于 pnpm 24 小时冷静期的说明）。
