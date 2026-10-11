@@ -13,7 +13,18 @@
 # 让你点一下更稳妥，脚本会检测 fork 是否存在并给出准确链接。
 set -euo pipefail
 
-PROXY="${DSH_GIT_PROXY:-http://127.0.0.1:7890}"
+# 代理自动探测，与 publish.sh 同一套规则（写死端口会在代理关闭时误报成
+# 「缺权限」，把用户引去折腾凭据）。DSH_GIT_PROXY 显式指定则用它，空串=强制直连。
+PROXY="${DSH_GIT_PROXY-}"
+if [ -z "${DSH_GIT_PROXY+x}" ]; then
+  for candidate in http://127.0.0.1:7890 http://127.0.0.1:7891; do
+    host_port="${candidate#http://}"
+    if command -v nc >/dev/null 2>&1 && nc -z -G 1 "${host_port%%:*}" "${host_port##*:}" 2>/dev/null; then
+      PROXY="$candidate"
+      break
+    fi
+  done
+fi
 UPSTREAM="awesome-dsh-plugin/awesome-dsh-plugin"
 ENTRY_SRC="$(cd "$(dirname "$0")" && pwd)/awesome-dsh-plugin-entry.yml"
 TARGET_PATH="data/plugins/arnen7000__DSH-Workbuddy-WebSearch.yml"
@@ -38,7 +49,11 @@ echo
 # 用临时目录做这次提交，不污染本仓库。
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/adp-submit.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
-GIT=(git -c "http.proxy=${PROXY}" -c "https.proxy=${PROXY}")
+if [ -n "$PROXY" ]; then
+  GIT=(git -c "http.proxy=${PROXY}" -c "https.proxy=${PROXY}")
+else
+  GIT=(git)
+fi
 
 echo "== 拉取你的 fork =="
 if ! "${GIT[@]}" clone --depth 1 "https://github.com/${FORK}.git" "$WORK/repo" 2>/dev/null; then
