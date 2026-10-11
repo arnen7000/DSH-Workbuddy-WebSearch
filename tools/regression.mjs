@@ -1338,6 +1338,51 @@ section("T13 未知加密算法版本 → 不得误报「未登录」");
     plain?.accessToken === "plain-tok" && plain?.envelopeIssue === undefined,
     "5.5 明文凭据不受影响（无 envelopeIssue）",
   );
+
+  // ── 混合形态：明文 accessToken + 未知格式 refreshToken ──
+  //
+  // 这是 v0.3.4 开发中真实引入过的一个回归：只要「有信封解不开」就整体判为
+  // 不可用，于是 accessToken 明明是明文可用的，却被拒绝 —— 把「现在就能搜」
+  // 变成「完全不能用」，比修复前更差。判据必须是「**确实拿不到可用 token**」，
+  // 而不是「存在一个解不开的信封」。
+  {
+    const tmp = mkdtempSync(join(tmpdir(), "wb-t13-mix-"));
+    try {
+      const p = join(tmp, "mixed.info");
+      writeFileSync(p, JSON.stringify({
+        auth: { accessToken: "PLAINTEXT-USABLE", refreshToken: wrapperFor(2), domain: "copilot.tencent.com" },
+        account: { uid: "u1" },
+      }));
+      const cred = await I.readCredentialFile(p, { variant: null });
+      check(
+        "T13.9",
+        cred?.accessToken === "PLAINTEXT-USABLE" && cred?.undecryptable !== true,
+        `明文 token + 未知格式 refreshToken → 仍返回可用 token（实得 ${cred?.undecryptable === true ? "undecryptable(" + cred.reason + ")" : cred?.accessToken}）`,
+      );
+    } finally {
+      try { rmSync(tmp, { recursive: true, force: true }); } catch {}
+    }
+  }
+  {
+    // 反向：**两个** token 都是未知信封时，必须如实报「格式不支持」，
+    // 不能因为「信封存在」就静默当成没凭据（那会退化成「请去登录」）。
+    const tmp = mkdtempSync(join(tmpdir(), "wb-t13-both-"));
+    try {
+      const p = join(tmp, "both.info");
+      writeFileSync(p, JSON.stringify({
+        auth: { accessToken: wrapperFor(2), refreshToken: wrapperFor(2), domain: "copilot.tencent.com" },
+        account: { uid: "u1" },
+      }));
+      const cred = await I.readCredentialFile(p, { variant: null });
+      check(
+        "T13.10",
+        cred?.undecryptable === true && cred?.reason === "unsupported-suite",
+        `两个 token 都是未知信封 → undecryptable(unsupported-suite)（实得 ${cred?.undecryptable === true ? cred.reason : JSON.stringify(cred)?.slice(0, 60)}）`,
+      );
+    } finally {
+      try { rmSync(tmp, { recursive: true, force: true }); } catch {}
+    }
+  }
 }
 
 // ── 汇总 ──
