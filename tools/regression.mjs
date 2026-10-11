@@ -1188,6 +1188,39 @@ section("T12 来源提取：中英文边界与截断标记");
       `markdown 链接保留非 ASCII 路径（实得 ${JSON.stringify(got)}）`,
     );
   }
+  {
+    // markdown 链接里 IDN 域名与 IPv6 字面量也完整 —— 这两类在**裸链**路径
+    // 取不到（见 T12.4b/T12.4c），所以"走 markdown"是它们的正解。
+    const got = only("见 [中文站](https://中文.example/路径) 与 [x](http://[::1]:8080/a) 完");
+    check(
+      "T12.4d",
+      got.includes("https://中文.example/路径") && got.includes("http://[::1]:8080/a"),
+      `markdown 链接保留 IDN 域名与 IPv6 字面量（实得 ${JSON.stringify(got)}）`,
+    );
+  }
+  {
+    // ⚠️ 以下是**刻意保留的取舍**，不是待修的缺陷。若有人"顺手修好"它们，
+    // 往往会把中文吞并（T12.1–T12.3）重新引回来 —— 所以在这里钉住。
+    //
+    // 裸链的中文路径会被截短，但截短后仍是能打开的地址。
+    const got = only("详见 https://example.com/说明 完");
+    check(
+      "T12.4b",
+      got.length === 1 && got[0] === "https://example.com/",
+      `裸链中文路径被截短（刻意：截短仍可打开，优于吞掉半句话。实得 ${JSON.stringify(got)}）`,
+    );
+  }
+  {
+    // 未做 punycode 的中文域名裸链取不到；IPv6 字面量裸链取不到。
+    // 两者都因"汉字/方括号被当作定界符"这一必要规则。
+    const idn = only("见 https://中文.example/路径 完");
+    const ipv6 = only("见 http://[::1]:8080/x 完");
+    check(
+      "T12.4c",
+      idn.length === 0 && ipv6.length === 0,
+      `裸链 IDN 域名与 IPv6 取不到（刻意；markdown 形态正常。实得 ${JSON.stringify([...idn, ...ipv6])}）`,
+    );
+  }
 
   // 缺陷③：收尾清理漏了反引号与 markdown 强调记号。
   {
