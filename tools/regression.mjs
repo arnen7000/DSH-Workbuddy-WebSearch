@@ -1117,6 +1117,229 @@ section("T11 区域绑定与「拒绝混用」");
   I.resetBinding();
 }
 
+// ── T12 URL 提取的中英文边界（v0.3.4 修复的三个真实缺陷） ──
+section("T12 来源提取：中英文边界与截断标记");
+{
+  const only = (md) => I.extractSources(md).map((s) => s.url);
+
+  // 缺陷②：裸链正则漏排汉字主体（U+4E00–U+9FFF），中文正文被吞进 URL。
+  // 中文不使用空格分词，因此「汉字即 URL 终点」是唯一可行的定界规则。
+  {
+    const got = only("见 https://dsh/harness/这时存在两个URL:内部监听地址 结束");
+    check(
+      "T12.1",
+      got.length === 1 && got[0] === "https://dsh/harness/",
+      `中文正文紧跟裸链 → 在汉字处截断（实得 ${JSON.stringify(got)}）`,
+    );
+  }
+  {
+    const got = only("详见 https://example.com/文档说明。下一句");
+    check(
+      "T12.2",
+      got.length === 1 && got[0] === "https://example.com/",
+      `中文句末标点 + 汉字 → 不吞并（实得 ${JSON.stringify(got)}）`,
+    );
+  }
+  {
+    // 全角标点、假名、谚文同样必须截断（此前只排了全角与 CJK 标点段）。
+    const got = only("链接 https://a.example/日本語のページ と https://b.example/한국어페이지 終");
+    check(
+      "T12.3",
+      got.includes("https://a.example/") && got.includes("https://b.example/"),
+      `假名/谚文处截断（实得 ${JSON.stringify(got)}）`,
+    );
+  }
+  {
+    // markdown 链接由 `)` 定界，**不做**汉字截断 —— 中文维基这类 URL 必须完整保留。
+    const got = only("见 [条目](https://zh.wikipedia.org/wiki/中文) 完");
+    check(
+      "T12.4",
+      got.length === 1 && got[0] === "https://zh.wikipedia.org/wiki/中文",
+      `markdown 链接保留非 ASCII 路径（实得 ${JSON.stringify(got)}）`,
+    );
+  }
+
+  // 缺陷③：收尾清理漏了反引号与 markdown 强调记号。
+  {
+    const got = only("run `https://github.com/a/b` now");
+    check(
+      "T12.5",
+      got.length === 1 && got[0] === "https://github.com/a/b",
+      `行内代码反引号被剥离（实得 ${JSON.stringify(got)}）`,
+    );
+  }
+  {
+    const got = only("**https://ex.example/x** 与 _https://ex.example/y_");
+    check(
+      "T12.6",
+      got.includes("https://ex.example/x") && got.includes("https://ex.example/y"),
+      `markdown 强调记号被剥离（实得 ${JSON.stringify(got)}）`,
+    );
+  }
+
+  // 英文路径不得回归：空格分词的语言里，URL 照旧吃到空格为止。
+  {
+    const got = only("see https://example.com/docs/page-1?q=a&b=c#frag here");
+    check(
+      "T12.7",
+      got.length === 1 && got[0] === "https://example.com/docs/page-1?q=a&b=c#frag",
+      `英文 URL（含 query/fragment）不受影响（实得 ${JSON.stringify(got)}）`,
+    );
+  }
+  {
+    const got = only("a https://ex.example/1, b https://ex.example/2. c (https://ex.example/3)");
+    check(
+      "T12.8",
+      got.length === 2 && got.includes("https://ex.example/1") && got.includes("https://ex.example/2"),
+      `英文句读与成对括号仍被剥离（实得 ${JSON.stringify(got)}）`,
+    );
+  }
+
+  // 缺陷④：truncated 的官方语义 = 「来源列表被上限截断」。
+  // 此前硬编码 false，导致触顶时前端不显示「来源列表已截断」。
+  {
+    const many = Array.from({ length: 25 }, (_, i) => `https://ex.example/${i}`).join(" ");
+    const d = I.extractSourcesDetailed(many);
+    check(
+      "T12.9",
+      d.sources.length === 20 && d.capped === true,
+      `25 条来源 → 保留 20 且 capped=true（实得 ${d.sources.length} / ${d.capped}）`,
+    );
+    const few = I.extractSourcesDetailed("https://ex.example/a https://ex.example/b");
+    check(
+      "T12.10",
+      few.sources.length === 2 && few.capped === false,
+      `未触顶 → capped=false（实得 ${few.capped}）`,
+    );
+  }
+  {
+    // 恰好 20 条：未丢弃任何来源，capped 必须为 false（边界不能差一）。
+    const exact = Array.from({ length: 20 }, (_, i) => `https://ex.example/${i}`).join(" ");
+    const d = I.extractSourcesDetailed(exact);
+    check(
+      "T12.11",
+      d.sources.length === 20 && d.capped === false,
+      `恰好 20 条 → capped=false（不多报截断，实得 ${d.capped}）`,
+    );
+  }
+  {
+    // 混合来源：markdown 链接先收集、裸链后收集。若实现「markdown 已占满就
+    // 跳过裸链遍历」，就会丢掉裸链却仍报 capped=false —— 前端于是不显示
+    // 「来源列表已截断」，用户以为来源就是全部。这条锁住该缺陷。
+    const mdLinks = Array.from({ length: 20 }, (_, i) => `[t${i}](https://md.example/${i})`).join(" ");
+    const mixed = `${mdLinks} 裸链 https://bare.example/1 https://bare.example/2`;
+    const d = I.extractSourcesDetailed(mixed);
+    check(
+      "T12.13",
+      d.sources.length === 20 && d.capped === true,
+      `20 条 markdown + 裸链 → capped=true（裸链被丢弃必须如实上报，实得 ${d.sources.length}/${d.capped}）`,
+    );
+  }
+  {
+    // markdown 链接优先于裸链：上限截断时不能把带标题的来源挤掉。
+    const mdLinks = Array.from({ length: 21 }, (_, i) => `[标题${i}](https://md.example/${i})`).join(" ");
+    const d = I.extractSourcesDetailed(`${mdLinks} https://bare.example/x`);
+    check(
+      "T12.14",
+      d.sources.every((s) => s.url.startsWith("https://md.example/")) && d.capped === true,
+      "markdown 链接优先于裸链（带标题的来源不被挤掉）",
+    );
+  }
+  {
+    // 源码级护栏：search() 不得再把 truncated 写死。
+    const src = readFileSync(join(root, "lib", "index.js"), "utf8");
+    const hardcoded = /truncated:\s*false\s*,/.test(src);
+    check("T12.12", !hardcoded, "search() 不再把 truncated 硬编码为 false（源码级断言）");
+  }
+}
+
+// ── T13 加密凭据的「未来版本」诊断（v0.3.4 修复的误导性报错） ──
+section("T13 未知加密算法版本 → 不得误报「未登录」");
+{
+  const KID = "9127dea1b44020a7"; // 真实 keyId 形态：16 位 hex
+  const b64 = (n) => Buffer.alloc(n, 1).toString("base64");
+  const wrapperFor = (suite) => ({
+    $wbEncrypted: 1,
+    envelope: Buffer.from(JSON.stringify({
+      suite, keyId: KID, nonce: b64(12), authTag: b64(16), ciphertext: b64(32),
+    })).toString("base64"),
+  });
+  const docFor = (suite) => JSON.stringify({
+    auth: { accessToken: wrapperFor(suite), refreshToken: wrapperFor(suite), domain: "www.workbuddy.ai" },
+    account: { uid: "u1" },
+  });
+
+  // suite=1（当前算法）仍走正常解密流程，不被新逻辑干扰。
+  const cur = I.parseWorkBuddyAuth(docFor(1));
+  check("T13.1", cur !== undefined && cur.encrypted === true, "suite=1 → 仍识别为可解密文档");
+
+  // suite=2（未来算法）：必须**仍被认成凭据文档**，否则会退化成「没凭据」。
+  const future = I.parseWorkBuddyAuth(docFor(2));
+  check(
+    "T13.2",
+    future !== undefined,
+    "suite=2 → 仍被识别为凭据文档（旧行为是 undefined，进而误报「请去登录」）",
+  );
+  check(
+    "T13.3",
+    future?.encryptedWrapper === true && future?.envelopeIssue?.reason === "unsupported-suite"
+      && future?.envelopeIssue?.suite === 2,
+    `suite=2 → 记录 unsupported-suite 与版本号（实得 ${JSON.stringify(future?.envelopeIssue)}）`,
+  );
+
+  // 信封畸形（非 JSON）与「算法太新」必须区分：指引不同。
+  const malformed = I.parseWorkBuddyAuth(JSON.stringify({
+    auth: { accessToken: { $wbEncrypted: 1, envelope: "bm90LWpzb24=" }, refreshToken: "x" },
+    account: { uid: "u1" },
+  }));
+  check(
+    "T13.4",
+    malformed?.envelopeIssue?.reason === "malformed-envelope",
+    `畸形信封 → malformed-envelope（实得 ${malformed?.envelopeIssue?.reason}）`,
+  );
+
+  // 端到端：错误码与文案必须指向「格式不支持」，而不是「没登录」。
+  {
+    const tmp = mkdtempSync(join(tmpdir(), "wb-t13-"));
+    try {
+      const p = join(tmp, "future.info");
+      writeFileSync(p, docFor(2));
+      let err;
+      try {
+        await I.resolveCredentialForVariant({ variant: I.VARIANTS[1], candidates: [p] });
+      } catch (e) { err = e; }
+      check(
+        "T13.5",
+        String(err?.code ?? "") === "WB_SEARCH_CREDENTIAL_UNSUPPORTED_FORMAT",
+        `未来算法 → WB_SEARCH_CREDENTIAL_UNSUPPORTED_FORMAT（实得 ${err?.code ?? "未抛"}）`,
+      );
+      const msg = String(err?.message ?? "");
+      check(
+        "T13.6",
+        /不是「没有登录」|不是"没有登录"/.test(msg) && /suite=2/.test(msg),
+        "错误信息明确否认「未登录」并带上算法版本号",
+      );
+      check(
+        "T13.7",
+        !/请在 .* 桌面端登录后重试/.test(msg),
+        "错误信息不含「请去桌面端登录」这类误导性指引",
+      );
+    } finally {
+      try { rmSync(tmp, { recursive: true, force: true }); } catch {}
+    }
+  }
+
+  // 明文凭据（5.5 形态）不受这一改动影响。
+  const plain = I.parseWorkBuddyAuth(JSON.stringify({
+    auth: { accessToken: "plain-tok", refreshToken: "r", domain: "copilot.tencent.com" }, account: { uid: "u" },
+  }));
+  check(
+    "T13.8",
+    plain?.accessToken === "plain-tok" && plain?.envelopeIssue === undefined,
+    "5.5 明文凭据不受影响（无 envelopeIssue）",
+  );
+}
+
 // ── 汇总 ──
 section("汇总");
 console.log(`  PASS: ${PASS.length}   FAIL: ${FAIL.length}   WARN: ${WARN.length}`);

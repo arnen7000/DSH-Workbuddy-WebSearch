@@ -45,11 +45,27 @@ WorkBuddy AI 任一）。
 
 ### 快速开始
 
-**从 npm 装（推荐）** —— 本插件已发布到 npm，不必 clone：
+**从 DSH 插件市场装（最省事）** —— 在 DSH 里打开**插件市场**，搜索
+`workbuddy-websearch`，点安装即可。安装、升级、卸载都在界面里完成，
+不用记命令、不用碰配置文件。
+
+**从 npm 装（命令行）** —— 本插件已发布到 npm，不必 clone：
 
 ```bash
 dsh plugin --profile web add dsh-workbuddy-websearch
 ```
+
+> ⚠️ **请固定版本号，或直接用市场安装。**
+> pnpm 11 起内置了 24 小时的「新版本冷静期」（`minimum-release-age`）：
+> 刚发布不久的版本会被**静默降级**到上一个满 24 小时的版本，
+> 而 `@latest` 标签也绕不过它。想要立刻用上最新版就显式指定：
+>
+> ```bash
+> dsh plugin --profile web add dsh-workbuddy-websearch@0.3.4
+> ```
+>
+> DSH 插件市场**自带**这个问题的处理（安装前先把目标固定到注册表的最新版），
+> 所以走市场安装不会有这个困扰。
 
 **从源码装** —— 想改代码、或想固定到某个提交时：
 
@@ -273,6 +289,7 @@ dsh headless "帮我搜一下最近的 XX 进展"
 
 | 版本 | 要点 |
 |---|---|
+| **0.3.4** | 修四个影响真实使用的缺陷：**中文正文被吞进 URL**（裸链漏排汉字主体，中文不用空格分词 → 必须把汉字当定界符）、**URL 收尾漏剥反引号与 markdown 强调记号**、**`truncated` 硬编码为 false**（前端因此不显示「来源列表已截断」）、**未知加密算法版本被误报成「未登录」**（WorkBuddy 升级加密算法后，明明登录着的用户会被告知去重新登录，而重登无效）。新增 22 条回归用例并用变异测试验证护栏非恒真 |
 | **0.3.3** | macOS 补齐 **Spotlight 发现链**（`mdfind` 按 bundle id 反查 → `plutil` 校验 → 可执行性检查 → 去重 → 多命中报歧义），对齐官方 connect 的定位策略；此前 macOS 只有 `/Applications/*.app` 一条默认路径，装在别处就发现不了。**Windows 行为完全不变** |
 | **0.3.2** | 新增 `screenshots.json` 与两张界面截图，供插件市场的详情页展示。**运行时行为与 0.3.1 相同** |
 | **0.3.1** | 发布链路改走 **npm 可信发布**（Trusted Publishing / OIDC）：在 GitHub 上发 Release 即自动发布，不再依赖长期 npm token，发布物附带 provenance 签名；修正 `package.json` 的仓库地址大小写（npm 要求与仓库完全一致）。**运行时行为与 0.3.0 相同** |
@@ -311,11 +328,44 @@ Electron 二进制定位策略，都源自该项目的逆向与验证工作（MI
 
 | 文档 | 用途 |
 |---|---|
-| **[TESTING.md](./TESTING.md)** | 测试体系与发布回环：场景地图、三层套件（T1–T11 / S1–S9 / G1–G9）、发布流程。**改代码前先读它。** |
+| **[TESTING.md](./TESTING.md)** | 测试体系与发布回环：场景地图、三层套件（T1–T13 / S1–S9 / G1–G9）、发布流程。**改代码前先读它。** |
 | **[DEVELOPING.md](./DEVELOPING.md)** | 本地联调环境（junction 挂载、`--dump-config` 核验）、实现要点与安装排障。 |
 | **[COMPATIBILITY.md](./COMPATIBILITY.md)** | 兼容矩阵与逐条实测依据。 |
 | **[NORM-COMPLIANCE.md](./NORM-COMPLIANCE.md)** | 与 dsh 官方规范的符合性审计（源码级证据），以及「哪些要改、哪些故意不改」。 |
 | **[GITHUB-SETUP.md](./GITHUB-SETUP.md)** | GitHub 侧要求对照：社区档案清单、工作流安全加固、仓库网页端设置清单。 |
+
+### 维护者：改一处代码并发布（最短路径）
+
+```bash
+# 1) 改代码（lib/ 下三个模块：index=搜索流程、credentials=凭据、platform=平台定位）
+#    纯 ESM、无构建步骤，改完直接生效。
+
+# 2) 跑三套检查 —— 必须全绿才能发
+node tools/regression.mjs "$PWD"        # 158 项：契约、凭据、区域、平台、提取边界
+node tools/scenarios.mjs  "$PWD"        #  42 项：异常路径（断网/401/abort/凭据损坏…）
+node tools/check-github-meta.mjs "$PWD" #  仓库元信息与「不夹带本机信息」红线
+
+# 3) 改版本号（package.json 的 version 与 versionNote）
+#    versionNote 是给人和给机器看的一句话全量说明，请一并更新。
+
+# 4) 提交并推送
+git commit -am "fix: ..." && git push
+
+# 5) 发 Release（tag 必须等于 package.json 的 version，CI 会卡这一条）
+#    GitHub 上 Releases → Draft a new release → tag 填 0.3.5 → Publish
+#    发布后 CI 自动：跑上面三套检查 → 用 OIDC 可信发布到 npm（带 provenance 签名）
+```
+
+**为什么只需要发 Release**：`.github/workflows/publish.yml` 用 **npm 可信发布（OIDC）**，
+不需要任何长期 npm token；工作流里还有一道**版本一致性闸门**，tag 与 `package.json`
+不一致会直接拒绝发布，避免「tag 写 0.4.0、实际发出去 0.3.9」这种不可逆错误。
+
+**用户怎么升级**：市场里点「升级」，或 `dsh plugin --profile web add dsh-workbuddy-websearch@<新版本号>`
+（见[快速开始](#快速开始)里关于 pnpm 24 小时冷静期的说明）。
+
+**想加一条回归用例**：在 `tools/regression.mjs` 里找 `T12`/`T13` 段照抄格式即可
+（`check("T12.15", 条件, "说明")`）。**请顺手做一次变异测试** —— 把修复点改回旧行为，
+确认新用例真的会失败；否则那条用例只是恒真的装饰。
 
 ## 许可证
 

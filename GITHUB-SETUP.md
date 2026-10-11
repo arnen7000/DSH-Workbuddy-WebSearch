@@ -368,7 +368,7 @@ node tools/check-github-meta.mjs "$PWD"
 
 ```bash
 node tools/check-github-meta.mjs "$PWD"   # G1–G9，40 项
-node tools/regression.mjs "$PWD"          # T1–T11
+node tools/regression.mjs "$PWD"          # T1–T13
 node tools/scenarios.mjs "$PWD"           # S1–S9
 node .local/check-links.mjs "$PWD"        # L1–L4（L4 = README 目录完整性，最易被漏）
 ```

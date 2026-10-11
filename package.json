@@ -1,8 +1,8 @@
 {
   "name": "dsh-workbuddy-websearch",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "将 WorkBuddy 桌面 App 的网络搜索接入 DeepSeek Harness 的 web_search 工具（零配置、零硬依赖）",
-  "versionNote": "0.3.3：为 macOS 补齐 Electron 定位的发现链。① 此前 macOS 只有 /Applications/<产品>.app 一条默认路径，装在别处（或目录名与产品名不一致）就完全找不到；Windows 有「常见安装根扫描 + 卸载注册表」两道兜底，macOS 一道都没有。② 现在按官方 dsh-workbuddy-connect 的做法补齐：用 mdfind 按 bundle id 反查 Spotlight 索引，再用 plutil 校验候选自己的 CFBundleIdentifier，然后确认包内 Contents/MacOS/Electron 存在且可执行，按 realpath 去重；多于一个命中就报歧义、绝不猜。③ 索引只是线索不是信任；mdfind/plutil 用绝对路径调用（不走 PATH）；结果按进程缓存一次，查询失败不缓存以便下次重试。④ 平台守卫保证 Windows 路径零影响，Windows 行为与 0.3.2 完全相同。⑤ 新增 16 条回归用例与 2 条异常路径用例，并用变异测试证明这些护栏不是恒真。⑥ macOS 仍为实验性：代码与官方实现逐条对齐，但本机没有 Mac 设备，未做真机端到端验证。",
+  "versionNote": "0.3.4：修四个影响真实使用的缺陷，中英文双语场景均覆盖。① 中文正文被吞进 URL：裸链正则只排除了 CJK 标点段（U+3000–U+303F）与全角段（U+FF00–U+FFEF），漏了汉字主体（U+4E00–U+9FFF），于是「详见 https://a.com/说明 结束」会把整句当成 URL，产出点不开的假来源 —— 中文不用空格分词，汉字必须作为定界符；同时补上假名、谚文、扩展 A/B 与兼容表意段。代价是未做百分号编码的中文路径会被截短，但那仍是可打开的地址。markdown 链接由 ) 定界，因此**保留**非 ASCII，中文维基类 URL 完整可用。② URL 收尾漏剥反引号与 markdown 强调记号：行内代码 `https://x` 会带上尾反引号，**粗体**/_斜体_ 同理，现一并剥离。③ truncated 硬编码为 false：官方语义是「来源列表被上限截断」，前端据此显示「来源列表已截断」；此前恒为 false，用户看不到截断提示。④ 未知加密算法版本被误报成「未登录」：parseEnvelope 只认 suite=1（刻意不猜未来格式），但 hasEncryptedFields 同时被当成「用户登没登录」的判据，于是 WorkBuddy 一旦升级加密算法，明明登录着的用户会收到「请去桌面端登录」——重登一百次也没用。现在区分「是不是加密凭据文档」与「能不能解开」，新增 WB_SEARCH_CREDENTIAL_UNSUPPORTED_FORMAT，错误信息直说格式比插件新并给出升级路径。另新增 22 条回归用例（T12/T13），并用变异测试证明护栏非恒真：分别注入三个旧缺陷，套件如实失败。",
   "author": "XingLang & WorkBuddy (小研)",
   "repository": {
     "type": "git",
