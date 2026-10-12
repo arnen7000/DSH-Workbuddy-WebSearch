@@ -548,7 +548,7 @@ connect + memory-evolve + better-sidebar + cost-meter + genui，把搜索插件�
 
 ## 9. 异常路径实测（`tools/scenarios.mjs`）
 
-「用户真实会撞上」的失败态，全部**离线可验证**（构造输入 / 打桩 fetch），共 45 项全通过。
+「用户真实会撞上」的失败态，全部**离线可验证**（构造输入 / 打桩 fetch），共 52 项全通过。
 
 | # | 场景 | 期望行为 | 实测 |
 |---|---|---|---|

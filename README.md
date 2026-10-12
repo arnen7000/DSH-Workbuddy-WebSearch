@@ -281,7 +281,7 @@ dsh headless "帮我搜一下最近的 XX 进展"
 
 - 想用回 dsh 官方搜索：把 `web` 行 `searchProvider` 改回 `deepseek-official`，或直接卸载本插件。
 
-- 📋 **失败态可自查**：`node tools/scenarios.mjs <插件目录>` 会离线验证 45 项异常路径
+- 📋 **失败态可自查**：`node tools/scenarios.mjs <插件目录>` 会离线验证 52 项异常路径
   （空查询、断网、401、流畸形、凭据损坏、并发、abort、接管范围、connect 装了但坏掉等）。
 
 ## 变更记录
@@ -344,7 +344,7 @@ Electron 二进制定位策略，都源自该项目的逆向与验证工作（MI
 
 # 2) 跑三套检查 —— 必须全绿才能发
 node tools/regression.mjs "$PWD"        # 174 项：契约、凭据、区域、平台、提取边界
-node tools/scenarios.mjs  "$PWD"        #  45 项：异常路径（断网/401/abort/凭据损坏…）
+node tools/scenarios.mjs  "$PWD"        #  52 项：异常路径（断网/401/abort/凭据损坏/换行形态…）
 node tools/check-github-meta.mjs "$PWD" #  仓库元信息与「不夹带本机信息」红线
 
 # 3) 改版本号（package.json 的 version 与 versionNote）

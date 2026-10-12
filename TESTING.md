@@ -73,7 +73,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 > 而 T9.5 的加解密往返用的是自造密钥，**完全测不出**这个问题。
 > 教训：凡涉及外部进程 / 私有绑定的调用，必须有源码级契约断言或真机实测。
 
-### 2.2 `tools/scenarios.mjs` — 异常路径 + 接管范围 + connect 降级 + 体系自检（S1–S9，45 项）
+### 2.2 `tools/scenarios.mjs` — 异常路径 + 接管范围 + connect 降级 + 体系自检（S1–S9，52 项）
 
 被测对象：**插件目录**（源码态即可，因为全部离线）。**不需要凭据、不需要网络**，靠构造输入和打桩 `fetch` 实现。
 
@@ -81,7 +81,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 |---|---|---|
 | S1 | 空 / 空白 / 提前 abort | S1.2 纯空白查询**不得误发云端计费**；S1.3 abort 已触发则短路不发请求 |
 | S2 | 网络 / 500 / 401 / 无 body | S2.2 错误信息**不得泄漏 accessToken**；S2.4 401 → `SESSION_DEAD`（可续期，不能当普通失败） |
-| S3 | 流畸形 / 空流 | S3.1 无 done 帧 → `EMPTY_RESULT`（不静默返回空）；S3.2 done 帧坏 JSON → 降级为空结果而非崩溃 |
+| S3 | 流畸形 / 空流 | S3.1 无 done 帧 → `EMPTY_RESULT`（不静默返回空）；S3.2 done 帧坏 JSON → 降级为空结果而非崩溃；**S3.5 SSE 换行形态兼容（LF / CRLF / CR-only / 混合 / `data:` 后无空格 / 多行 data 拼接）；S3.6 `data` 拆在两个 chunk 仍拼回整帧** |
 | S4 | 凭据垃圾输入 | S4.1 六种垃圾输入均返回安全值；**S4.1b/S4.1c/S4.1d 未知加密算法版本的三条边界（仍算有凭据、明文 token 不被整体拒绝、两个都是未知信封时如实报 unsupported-suite）**；S4.4 无凭据时 `available()` 返回 `false` 而非抛 |
 | S5 | 平台路径分层 + 跨平台模拟 | S5.1 env 覆盖排在 `credentialPaths()` 首位；S5.2 `desktopAuthFiles()` **刻意不含** env 覆盖 |
 | S6 | 并发 / 10 万字符 / abort | S6.1 五路并发不串流；S6.3 abort 须在 1500ms 内返回 |
