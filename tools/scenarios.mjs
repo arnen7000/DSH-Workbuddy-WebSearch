@@ -214,6 +214,71 @@ console.log("\nS3  流式响应畸形 / 空结果（上游改协议、返回空�
   } finally {
     globalThis.fetch = originalFetch;
   }
+
+  // ── S3.5 SSE 换行形态兼容 ──
+  //
+  // SSE 规范把换行定义为 LF / CR / CRLF 三者之一，Node 的 fetch 流并不保证
+  // 帮你把 CRLF 归一成 LF。此前实现只在 "\n\n" 处切帧、且只在 "\n" 处切行，
+  // 于是 CRLF 流的帧永远切不出来，最后报
+  // 「stream ended without synthesis content」—— 把「服务器用了 CRLF」
+  // 误报成「上游没给内容」。现在三种换行都要能解析。
+  {
+    const enc = new TextEncoder();
+    const payload = JSON.stringify({ synthesis: { content: "ok" } });
+    const forms = [
+      ["LF", `event: done\ndata: ${payload}\n\n`, "ok"],
+      ["CRLF", `event: done\r\ndata: ${payload}\r\n\r\n`, "ok"],
+      ["CR-only", `event: done\rdata: ${payload}\r\r`, "ok"],
+      ["混合换行", `event: done\r\ndata: ${payload}\n\n`, "ok"],
+      ["data 冒号后无空格", `event: done\ndata:${payload}\n\n`, "ok"],
+      ["多行 data 拼接", `event: done\ndata: {"synthesis":\ndata: {"content":"ml"}}\n\n`, "ml"],
+    ];
+    for (const [label, sse, expected] of forms) {
+      globalThis.fetch = async () =>
+        new Response(new ReadableStream({
+          start(c) { c.enqueue(enc.encode(sse)); c.close(); },
+        }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+      let ok = false;
+      let detail = "";
+      try {
+        const r = await callAgenticSearch({ accessToken: "x", domain: "d" }, "test", undefined);
+        ok = r.content === expected;
+        detail = `content=${JSON.stringify(r.content)}`;
+      } catch (error) {
+        detail = `抛 ${error?.code ?? String(error)}`;
+      }
+      check("S3.5", `SSE 换行形态兼容：${label}`, ok, detail);
+      globalThis.fetch = originalFetch;
+    }
+  }
+
+  // ── S3.6 跨 chunk 拆帧 ──
+  // `data:` 被网络拆到两个 chunk 是常态：缓冲里那一帧还没收完就被切一刀。
+  // 只有等**空行抵达**才算帧完整，所以拆在 data 中间必须能拼回。
+  {
+    const enc = new TextEncoder();
+    const full = 'event: done\ndata: {"synthesis":{"content":"split-ok"}}\n\n';
+    const mid = full.indexOf("split") + 3; // 切在 data 的 JSON 中间
+    globalThis.fetch = async () =>
+      new Response(new ReadableStream({
+        start(c) {
+          c.enqueue(enc.encode(full.slice(0, mid)));
+          c.enqueue(enc.encode(full.slice(mid)));
+          c.close();
+        },
+      }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+    let ok = false;
+    let detail = "";
+    try {
+      const r = await callAgenticSearch({ accessToken: "x", domain: "d" }, "test", undefined);
+      ok = r.content === "split-ok";
+      detail = `content=${JSON.stringify(r.content)}`;
+    } catch (error) {
+      detail = `抛 ${error?.code ?? String(error)}`;
+    }
+    check("S3.6", "data 被拆到两个 chunk 仍能拼回整帧", ok, detail);
+    globalThis.fetch = originalFetch;
+  }
 }
 
 // ───────────────────────── S4 凭据缺失 / 损坏 ─────────────────────────
