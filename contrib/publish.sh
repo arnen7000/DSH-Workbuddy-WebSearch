@@ -17,30 +17,21 @@
 # 凭据缺失时脚本会明确报错并给出两种补救方式，而不是静默失败。
 set -euo pipefail
 
-# 代理：**自动探测**，不写死。
-#
-# 写死端口会在两种常见情形下帮倒忙，而且报错会指向错误的方向：
-#   - 代理没开（或换了端口）→ git 连 127.0.0.1:7890 立即失败，
-#     但脚本会把它误判成「缺凭据」，于是用户去折腾 PAT，白费功夫；
-#   - 网络本来就能直连 → 白白多绕一跳。
-#
-# 规则：DSH_GIT_PROXY 显式指定则用它（也接受空串表示强制直连）；
-# 否则探测默认端口，**通才用**，不通就直连。
-PROXY="${DSH_GIT_PROXY-}"
-if [ -z "${DSH_GIT_PROXY+x}" ]; then
-  for candidate in http://127.0.0.1:7890 http://127.0.0.1:7891; do
-    host_port="${candidate#http://}"
-    if command -v nc >/dev/null 2>&1 && nc -z -G 1 "${host_port%%:*}" "${host_port##*:}" 2>/dev/null; then
-      PROXY="$candidate"
-      break
-    fi
-  done
-fi
+# 共用工具：仓库根路径解析 / 代理探测 / 超时包装 / 失败归因。理由与踩过的坑都写在
+# contrib/lib.sh 里（这段逻辑原先在两个脚本里各抄一份，且没法被测试）。
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+
+# 代理：DSH_GIT_PROXY 显式指定则用它（**空串表示强制直连**）；否则探测默认端口，
+# 通才用，不通就直连。不写死端口 —— 写死会在代理关闭时误报成「缺凭据」。
+PROXY="$(resolve_proxy)"
+
 DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
 
 cd "$(dirname "$0")/.."
-ROOT="$PWD"
+# ⚠️ 不要直接用 $PWD：Git Bash / MSYS 下它是 /d/... 形式，交给 node 的 require()
+# 会 MODULE_NOT_FOUND，把「读版本号」这一步崩掉。resolve_root 会做平台转换。
+ROOT="$(resolve_root)"
 
 # 解析 node：优先 PATH，其次 DSH 自带的运行时（桌面版 dsh 不一定把 node 放进 PATH）。
 NODE="${DSH_NODE:-}"
@@ -134,13 +125,13 @@ echo
 #   - 其他（如非快进）→ 原样回显 git 的话。
 diagnose_push_failure() {
   local out="$1"
-  echo "✗ 推送预演失败。" >&2
-  if printf '%s' "$out" | grep -qiE "could not resolve host|failed to connect|connection (refused|timed out)|operation timed out|network is unreachable"; then
+  echo "✗ git push 失败。" >&2
+  if is_network_failure "$out"; then
     echo "  原因：**连不上 GitHub**（不是凭据问题）。" >&2
     echo "  - 当前代理设置：${PROXY:-（直连）}" >&2
     echo "  - 可显式指定代理：DSH_GIT_PROXY=http://127.0.0.1:7890 bash $0" >&2
     echo "  - 或强制直连：  DSH_GIT_PROXY= bash $0" >&2
-  elif printf '%s' "$out" | grep -qiE "could not read username|authentication failed|permission denied|403"; then
+  elif is_auth_failure "$out"; then
     echo "  原因：**缺推送凭据**。两种补救方式：" >&2
     echo "    a) 用 PAT：git remote set-url origin https://<用户名>:<PAT>@github.com/arnen7000/DSH-Workbuddy-WebSearch.git" >&2
     echo "    b) 改 SSH：git remote set-url origin git@github.com:arnen7000/DSH-Workbuddy-WebSearch.git" >&2
@@ -151,7 +142,9 @@ diagnose_push_failure() {
 
 if [ "$DRY_RUN" = "1" ]; then
   echo "[dry-run] 将执行：git push origin ${PUSH_REF}"
-  push_out="$("${GIT[@]}" push --dry-run origin "$PUSH_REF" 2>&1)" || {
+  # ⚠️ 套超时：GitHub 不通时 `git push` 会**永久挂起**（既不出错也不返回），
+  #    在 CI 或非交互环境里就是静默卡死。180s 对这个小仓库足够宽裕。
+  push_out="$(run_with_timeout 180 "${GIT[@]}" push --dry-run origin "$PUSH_REF" 2>&1)" || {
     printf '%s\n' "$push_out" >&2
     diagnose_push_failure "$push_out"
     exit 1
@@ -162,7 +155,7 @@ if [ "$DRY_RUN" = "1" ]; then
 fi
 
 echo "== 推送分支（目标：${DEFAULT_BRANCH}）=="
-push_out="$("${GIT[@]}" push origin "$PUSH_REF" 2>&1)" || {
+push_out="$(run_with_timeout 180 "${GIT[@]}" push origin "$PUSH_REF" 2>&1)" || {
   printf '%s\n' "$push_out" >&2
   diagnose_push_failure "$push_out"
   exit 1
@@ -178,7 +171,7 @@ else
 fi
 
 echo "== 推送标签 =="
-"${GIT[@]}" push origin "$TAG"
+run_with_timeout 180 "${GIT[@]}" push origin "$TAG"
 
 # ⚠️ 关键：**推 tag 本身不会触发发布**。
 # .github/workflows/publish.yml 的触发条件是 `release: types: [published]`

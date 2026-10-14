@@ -1,6 +1,6 @@
 # 适用范围（Compatibility Matrix）
 
-> 版本：dsh-workbuddy-websearch **v0.2.5** · 更新：2026-10
+> 版本：dsh-workbuddy-websearch **v0.3.5** · 更新：2026-10
 > 本文件定义本插件**能装在哪、依赖什么、适配哪些版本**，以及每一条的**实测依据**。
 > 发布前请对照本文确认声明与实测一致。
 
@@ -548,7 +548,7 @@ connect + memory-evolve + better-sidebar + cost-meter + genui，把搜索插件�
 
 ## 9. 异常路径实测（`tools/scenarios.mjs`）
 
-「用户真实会撞上」的失败态，全部**离线可验证**（构造输入 / 打桩 fetch），共 52 项全通过。
+「用户真实会撞上」的失败态，全部**离线可验证**（构造输入 / 打桩 fetch），共 66 项全通过。
 
 | # | 场景 | 期望行为 | 实测 |
 |---|---|---|---|
@@ -562,6 +562,8 @@ connect + memory-evolve + better-sidebar + cost-meter + genui，把搜索插件�
 | S3.1 | 流无 done 帧 | 归为空结果，不静默成功 | ✅ `WB_SEARCH_EMPTY_RESULT` |
 | S3.2 | done 帧 JSON 损坏 | 归为空结果，不崩溃 | ✅ `WB_SEARCH_EMPTY_RESULT` |
 | S3.3–4 | 正常 done 帧 | 解析 content + sources 去重保序 | ✅ 对照组通过 |
+| S3.7 | `synthesis.content` 是**非字符串**（数字/对象/数组/布尔） | 归因为上游协议违约，**不得漏出原生 TypeError** | ✅ `WB_SEARCH_UPSTREAM_ERROR` |
+| S3.8 | `synthesis.content` 缺失 / `null` | 合法的空帧，仍按空结果处理（不误报成协议违约） | ✅ `WB_SEARCH_EMPTY_RESULT` |
 | S4.1 | 凭据文件半损坏（6 种垃圾输入） | 不抛、**不造出假 token** | ✅ 全部安全 |
 | S4.2–4 | 无凭据环境 | 探针/枚举/`available()` 均不抛 | ✅ |
 | S5.1 | `WORKBUDDY_AUTH_FILE` 自定义路径 | 在 `credentialPaths()` 里**最高优先级生效** | ✅ |
@@ -573,6 +575,7 @@ connect + memory-evolve + better-sidebar + cost-meter + genui，把搜索插件�
 | S6.3 | 中途 abort | **快速返回**（实测 <150ms），不等云端跑完 | ✅ |
 | S7.1–3 | 接管范围 | 只注册 search，不注册 fetch；patch 保留 fetchProvider | ✅ |
 | S9.1–9.7 | **connect 装了但坏了** | 返回死 token / 空 token 时**不采信**并回落自带路径；抛错或包坏时静默降级；`forceRefresh` 不复用 connect 的旧 token | ✅ |
+| S10.1–8 | **维护者脚本**（发布 / 上架） | 仓库根路径能被 node 解析、端口探测不依赖 `nc`、`CONNECT tunnel failed` 归因正确、`--dry-run` 真离线、clone 失败回显原始 stderr 并归因为「连不上」 | ✅ |
 
 > **S6.3 的意义**：abort 若无效，用户按了取消仍会付一次完整的云端检索费用。
 > 实测入口短路 + 收流竞态兜底共同生效，是「省钱」的关键路径。

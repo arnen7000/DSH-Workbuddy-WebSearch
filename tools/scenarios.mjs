@@ -21,6 +21,7 @@ import { pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 
 const targetDir = resolve(process.argv[2] ?? new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 const entryUrl = pathToFileURL(join(targetDir, "lib", "index.js")).href;
@@ -278,6 +279,50 @@ console.log("\nS3  流式响应畸形 / 空结果（上游改协议、返回空�
     }
     check("S3.6", "data 被拆到两个 chunk 仍能拼回整帧", ok, detail);
     globalThis.fetch = originalFetch;
+  }
+
+  // ── S3.7 / S3.8 done 帧的 synthesis.content 不是字符串 ──
+  //
+  // 上游偶尔会给出非字符串的 content（数字/对象/数组/布尔）。旧实现直接把它交给
+  // `cleanSynthesis`，于是抛出**原生 TypeError**（`content.replace is not a
+  // function`）—— 宿主拿不到任何可分类的 code，违反 `webError` 兜底注释里明说的
+  // 「必须保留 code」原则（重试/重登/中止等语义全靠 code 分流）。
+  //
+  // 归因要求：非字符串 → UPSTREAM_ERROR（上游协议违约，不是「查询无结果」）；
+  //          缺失/null → 仍是 EMPTY_RESULT（合法空帧，不得误报成协议违约）。
+  {
+    const enc = new TextEncoder();
+    const streamOf = (sse) => async () =>
+      new Response(new ReadableStream({
+        start(c) { c.enqueue(enc.encode(sse)); c.close(); },
+      }), { status: 200 });
+
+    for (const [label, literal] of [["数字", "123"], ["对象", '{"a":1}'], ["数组", "[1,2]"], ["布尔", "true"]]) {
+      globalThis.fetch = streamOf(`event: done\ndata: {"synthesis":{"content":${literal}}}\n\n`);
+      const r = await expectReject(() => callAgenticSearch({ accessToken: "x", domain: "d" }, "test", undefined));
+      check(
+        "S3.7",
+        `非字符串 synthesis.content（${label}）→ 可归因 code（不得漏出原生 TypeError）`,
+        r.rejected && r.error?.code === "WB_SEARCH_UPSTREAM_ERROR",
+        r.rejected ? `code=${r.error?.code} 构造器=${r.error?.constructor?.name}` : "未抛错",
+      );
+      globalThis.fetch = originalFetch;
+    }
+
+    for (const [label, sse] of [
+      ["缺失", 'event: done\ndata: {"synthesis":{}}\n\n'],
+      ["null", 'event: done\ndata: {"synthesis":{"content":null}}\n\n'],
+    ]) {
+      globalThis.fetch = streamOf(sse);
+      const r = await expectReject(() => callAgenticSearch({ accessToken: "x", domain: "d" }, "test", undefined));
+      check(
+        "S3.8",
+        `content ${label} → WB_SEARCH_EMPTY_RESULT（合法空帧，不算协议违约）`,
+        r.rejected && r.error?.code === "WB_SEARCH_EMPTY_RESULT",
+        r.rejected ? `code=${r.error?.code}` : "未抛错",
+      );
+      globalThis.fetch = originalFetch;
+    }
   }
 }
 
@@ -865,6 +910,181 @@ console.log("\nS7  接管范围：只接管搜索，不接管抓取（最易误�
     );
   } else {
     check("S8.4", "非仓库目录（npm 包内无 .github/），跳过 CI 接线检查", true, "");
+  }
+}
+
+// ───────────────────────── S10 维护者脚本（发布 / 上架） ─────────────────────────
+//
+// `contrib/` 下的两个脚本是发布链上**唯一没有自动化测试**的一段，而它们恰好在本机
+// 完全跑不起来：publish.sh 第一步就崩（Git Bash 的 `/d/...` 路径交给 node 的
+// `require()` → MODULE_NOT_FOUND），submit-market.sh 则永久挂起（探测依赖 `nc`，
+// 而本机没有 nc → 静默判定「没有代理」→ 直连 GitHub → 卡死，且 clone 的 stderr
+// 被 `2>/dev/null` 吞掉，连原因都看不到）。
+//
+// 这组用例把**行为**钉住，而不是把源码文本钉住：全部用真实的 bash / git / node，
+// 需要失败时就把代理指向一个必然不通的端口，因此不依赖网络、也不依赖任何桩。
+{
+  console.log(`\nS10  维护者脚本（发布 / 上架）`);
+  const fs = await import("node:fs");
+  const contribDir = join(targetDir, "contrib");
+  const isRepoDir = fs.existsSync(join(targetDir, ".git")) || fs.existsSync(join(targetDir, ".github"));
+  const hasScripts = fs.existsSync(join(contribDir, "publish.sh")) && fs.existsSync(join(contribDir, "lib.sh"));
+
+  if (!isRepoDir || !hasScripts) {
+    check("S10.1", "非仓库目录（npm 包内无 contrib/），跳过维护者脚本检查", true, "");
+  } else {
+    const runBash = (cwd, code, extraEnv = {}) =>
+      spawnSync("bash", ["-c", code], {
+        cwd,
+        encoding: "utf8",
+        timeout: 120_000,
+        env: { ...process.env, ...extraEnv },
+      });
+    const out = (r) => `${r.stdout ?? ""}${r.stderr ?? ""}`;
+
+    // S10.1–S10.3 仓库根路径必须能被 node 认出来。
+    //
+    // 这是 publish.sh 的**第一步**（读 package.json 版本号），原先写成 `ROOT="$PWD"`：
+    // Git Bash 下 `$PWD` 是 `/d/...`（MSYS）形态，node 的 `require()` 认不出，脚本
+    // 一行有效输出都没有就崩掉 —— 也就是「发布脚本在本机一步都跑不动」。
+    {
+      // ⚠️ 这条**必须打桩 cygpath 并直接注入 `$PWD`**，不能靠「在当前目录下跑一遍」：
+      //    真实 MSYS 形态只在 Git Bash 里出现，而 node 的 spawnSync 传 cwd 给 bash 时
+      //    `$PWD` 拿到的已经是 Windows 形态（`<盘符>:/...`）—— 于是原写法在任何平台上
+      //    都测不出这个缺陷（这条是变异测试抓出来的：把 resolve_root 改回 `$PWD`，
+      //    旧写法的 S10.1 依然全绿）。
+      //
+      //    断言的是**属性**（输出不得是 MSYS 形态）而不是「必须调用 cygpath」：
+      //    换成别的转换手段（如 sed）同样算通过。
+      const r = runBash(contribDir, 'cygpath() { printf "CONVERTED"; }; . ./lib.sh; PWD="/d/fake/repo"; resolve_root');
+      const got = (r.stdout ?? "").trim();
+      check(
+        "S10.1",
+        "MSYS 形态的 $PWD（/d/...）不得被原样输出（node 认不出这种路径）",
+        got !== "" && !/^\/[a-z]\//.test(got),
+        `实测 ${JSON.stringify(got)}`,
+      );
+    }
+    {
+      // 端到端补一刀：在真实仓库上，resolve_root 的输出必须真能被 node 的 require 解析。
+      const rootRes = runBash(targetDir, ". ./contrib/lib.sh; resolve_root");
+      const root = (rootRes.stdout ?? "").trim();
+      const requireRes = spawnSync("node", ["-p", `require(${JSON.stringify(`${root}/package.json`)}).version`], {
+        encoding: "utf8",
+        timeout: 30_000,
+      });
+      const version = (requireRes.stdout ?? "").trim();
+      const pkgVersion = JSON.parse(fs.readFileSync(join(targetDir, "package.json"), "utf8")).version;
+      check(
+        "S10.2",
+        "resolve_root 在真实仓库上的输出能被 node 的 require 解析（publish.sh 的第一步不再崩）",
+        requireRes.status === 0 && version === pkgVersion,
+        `root=${JSON.stringify(root)} 读到的版本=${JSON.stringify(version)} 期望=${pkgVersion}`,
+      );
+      // 输出里不得出现 MSYS 风格的裸盘符路径 —— 那正是让 node 认不出的形态。
+      check(
+        "S10.3",
+        "resolve_root 不产出 node 认不出的 MSYS 路径（如 /d/...）",
+        root !== "" && !/^\/[a-z]\//.test(root),
+        `root=${JSON.stringify(root)}`,
+      );
+    }
+
+    // S10.4 代理探测不得依赖 nc。
+    //
+    // 本机（Git Bash 自带的 PortableGit）**没有 nc**，而旧写法是
+    // `command -v nc && nc -z ...` —— 缺 nc 时整段判断直接短路成「没有代理」。
+    // 这里把 nc 覆盖成一个「必定失败」的函数（`command -v nc` 仍会命中它），
+    // 于是只有真正不依赖 nc 的实现才能探到那个确实在监听的端口。
+    {
+      const net = await import("node:net");
+      const server = net.createServer();
+      const port = await new Promise((res, rej) => {
+        server.once("error", rej);
+        server.listen(0, "127.0.0.1", () => res(server.address().port));
+      });
+      const probe = runBash(contribDir, `nc() { return 1; }; . ./lib.sh; port_open 127.0.0.1 ${port} && echo OPEN || echo CLOSED`);
+      await new Promise((r) => server.close(r));
+      const verdict = (probe.stdout ?? "").trim();
+      check(
+        "S10.4",
+        "端口探测不依赖 nc（nc 被覆盖成必定失败，仍能探到真实监听的端口）",
+        verdict === "OPEN",
+        `实测 ${JSON.stringify(verdict)}`,
+      );
+    }
+
+    // S10.5 失败归因必须覆盖 `CONNECT tunnel failed, response 502`。
+    //
+    // 走 HTTP 代理访问 GitHub 被中间设备拦截时，git 报的就是这一句；它既不含
+    // "failed to connect" 也不含 "could not resolve host"。早先的正则漏了它，
+    // 于是落到「原因见上方输出」，恰好丢掉唯一有用的那条指引（去查网络，而不是
+    // 去折腾 PAT）。同时两类必须**互斥**：网络问题不得被误判成凭据问题。
+    {
+      const msg = "fatal: unable to access 'https://github.com/x/y.git/': CONNECT tunnel failed, response 502";
+      const cls = runBash(
+        targetDir,
+        '. ./contrib/lib.sh; is_network_failure "$MSG" && echo NET || echo NOTNET; is_auth_failure "$MSG" && echo AUTH || echo NOTAUTH',
+        { MSG: msg },
+      );
+      const lines = (cls.stdout ?? "").trim().split(/\s+/);
+      check(
+        "S10.5",
+        "CONNECT tunnel failed, response 502 → 归类为「连不上」（且不误判为缺凭据）",
+        lines[0] === "NET" && lines[1] === "NOTAUTH",
+        `实测 ${JSON.stringify(lines.join(" "))}`,
+      );
+    }
+
+    // S10.6 `submit-market.sh --dry-run` 必须**离线**且成功。
+    //
+    // 代理指向必然不通的端口：只要脚本仍尝试联网（clone），就一定会失败并返回
+    // 非零 —— 它返回 0 即证明「dry-run 只在本地准备」这句说明属实。
+    {
+      const r = runBash(targetDir, "bash ./contrib/submit-market.sh --dry-run", {
+        DSH_GIT_PROXY: "http://127.0.0.1:1",
+      });
+      const text = out(r);
+      check(
+        "S10.6",
+        "submit-market.sh --dry-run 离线完成（代理不可用时仍成功，说明未联网）",
+        r.status === 0 && /未联网/.test(text),
+        `exit=${r.status} 输出末尾=${JSON.stringify(text.slice(-160))}`,
+      );
+    }
+
+    // S10.7 真正联网失败时：必须失败、必须回显 git 的原始 stderr、必须归因为「连不上」。
+    //
+    // 三个要求缺一不可：静默失败会让维护者以为是「没 fork」而去开 fork；
+    // 吞掉 stderr 则连原因都看不到。
+    {
+      const r = runBash(targetDir, "bash ./contrib/submit-market.sh", {
+        DSH_GIT_PROXY: "http://127.0.0.1:1",
+      });
+      const text = out(r);
+      check(
+        "S10.7",
+        "clone 失败 → 非零退出 + 回显 git 原始错误 + 归因为「连不上 GitHub」（不误报「你没 fork」）",
+        r.status !== 0 && /连不上 GitHub/.test(text) && /fatal|Failed to connect|unable to access/i.test(text),
+        `exit=${r.status} 含原始错误=${/fatal|Failed to connect|unable to access/i.test(text)} 输出末尾=${JSON.stringify(text.slice(-200))}`,
+      );
+    }
+
+    // S10.8 防回退：两个脚本都必须用 lib.sh 的 resolve_root，不得再回到裸 `$PWD`。
+    //
+    // 纯文本断言，但它守的是一个**已被证实的崩溃点**（见 S10.1），且与上面的行为
+    // 断言互为补充：行为断言证明「现在的实现是对的」，这条证明「以后也不会退回」。
+    {
+      const src = ["publish.sh", "submit-market.sh"].map((f) => fs.readFileSync(join(contribDir, f), "utf8"));
+      const sourcesLib = src.every((s) => /\.\s+"\$\(cd "\$\(dirname "\$0"\)" && pwd\)\/lib\.sh"/.test(s));
+      const noRawPwd = src.every((s) => !/^ROOT="\$PWD"$/m.test(s));
+      check(
+        "S10.8",
+        "两个脚本都 source contrib/lib.sh，且不再用裸 ROOT=\"$PWD\"（防回退）",
+        sourcesLib && noRawPwd,
+        `source lib.sh=${sourcesLib} 无裸 $PWD=${noRawPwd}`,
+      );
+    }
   }
 }
 

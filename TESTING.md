@@ -38,14 +38,17 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 | 3 | **运行** | 正常搜索、区域切换、超长 query、并发、引用来源 | T5、T6、S6、T7 |
 | 4 | **异常** | 空 query、断网、500、401、流中断、坏 JSON、用户中止 | **S1、S2、S3、S6** |
 | 5 | **跨环境** | Windows / macOS、CPU 架构、有/无 connect | T9、T10、T11、S5 |
+| 6 | **发布**（维护者，非终端用户） | 发布脚本在本机跑不起来 / 上架脚本挂死 / 失败原因指向错误的方向 | S10 |
 
 **第 4 段（异常）是历史上最大的盲区**：`regression.mjs` 只覆盖正常路径，用户报的 bug 却几乎全在异常路径上。`scenarios.mjs` 就是为此而建。
+
+**第 6 段是第二个盲区**：`contrib/` 下的发布/上架脚本长期没有任何自动化测试，结果两个脚本在本机**一个一步都跑不动、一个永久挂死**。S10 用真实的 bash / git 把它们的行为钉住（需要失败时就把代理指向必然不通的端口），全程离线。
 
 ---
 
 ## 2. 三层套件的分工
 
-### 2.1 `tools/regression.mjs` — 正常路径 + 契约（T1–T13；源态 / 安装态均 174 项）
+### 2.1 `tools/regression.mjs` — 正常路径 + 契约（T1–T14；源态 / 安装态均 183 项）
 
 被测对象：**已安装的插件实体目录**（`link:` junction 或 `.tgz` 解包后的目录均算）。
 无凭据时会自动把 T3/T5 降级为 `WARN`，因此 CI 上恒可跑。
@@ -57,7 +60,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 | T3 | 凭据解析 | connect 桥、双 variant store 枚举 |
 | T4 | 区域切换 | config 优先于 env，`china`→`cn` 归一化 |
 | T5 | 真实搜索 | 仅在有凭据时跑；sources 非空、综述非空、`<selected-refs>` 已清。**降级判据**：错误为 `electron-binary-unavailable`（本机装在自选路径/未装桌面端）→ `WARN` 跳过；`decryption-failed` 等真实缺陷 → `FAIL` |
-| T6 | 纯函数 | `extractSources` / `cleanSynthesis` / `parseWorkBuddyAuth` / `regionOf` / `chatBase` |
+| T6 | 纯函数 | `extractSources` / `cleanSynthesis` / `parseWorkBuddyAuth` / `regionOf` / `chatBase`；`cleanSynthesis` 必须是**全函数**（T6.11：非字符串输入返回空串，不得抛原生 TypeError） |
 | T7 | 错误路径 | 空 query 报错码、`available()` 返回布尔、abort 码 |
 | T8 | 边界 | 重复导入、`__internals` 齐全、候选路径含国际版 |
 | T9 | 零依赖自足 | 三个自带模块可独立加载、只依赖 `node:` 与相对路径、AES 往返；**key helper 的绑定契约（T9.15/T9.16 源码断言：必须是 `_linkedBinding("electron_browser_workbuddy_storage").loggerGet()`）**、真实载荷形状兼容（T9.17/T9.18）、**provider id 冲突的可操作报错（T9.19/T9.20/T9.21：带冲突 id + 给出排查步骤 + 不点名任何具体插件）** |
@@ -65,6 +68,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 | T11 | 区域绑定 | 凭据形态识别（absent/plain/encrypted）、`auto` 选定规则、显式指定的强约束、**绑定粘性**、跨版凭据拒绝（`WB_SEARCH_CREDENTIAL_REGION_MISMATCH`）、`available()` 只看绑定那一版，以及「不跨版回落」的源码级断言 |
 | T12 | 来源提取的中英文边界 | **汉字/假名/谚文作为裸链定界符（T12.1–T12.3）**、markdown 链接保留非 ASCII 路径与 IDN/IPv6（T12.4/T12.4d）、**成对括号保留（T12.4e：`.../Foo_(bar)` 不被截断）、括号配对判断（T12.4f）、括号包裹的裸链不被丢弃（T12.4g）**、**刻意取舍的护栏（T12.4b/T12.4c：裸链中文路径截短、裸链 IDN/IPv6 取不到 —— 钉住它们，防止有人「顺手修好」而把中文吞并引回来）**、反引号与 markdown 强调记号剥离（T12.5/T12.6）、英文 URL 含 query/fragment 不回归（T12.7/T12.8）、**`capped` 语义与边界（T12.9–T12.11、T12.13、T12.14：25 条→capped、恰好 20 条→不误报、markdown 占满时裸链被丢弃必须上报、markdown 优先不被挤掉）**、`truncated` 不硬编码的源码断言（T12.12）、**病态输入的线性复杂度（T12.15：6 万个未闭合 `[` 必须远低于 1s，防标题正则退化成 O(n²)）与上界不误伤真实链接（T12.16）** |
 | T13 | 未知加密算法版本与凭据形态 | **`suite=1` 仍走正常解密（T13.1）**、`suite=2` 仍被识别为凭据文档而非「没凭据」（T13.2/T13.3）、畸形信封与「算法太新」分开报（T13.4）、错误码为 `WB_SEARCH_CREDENTIAL_UNSUPPORTED_FORMAT` 且文案明确否认「未登录」（T13.5–T13.7）、明文凭据不受影响（T13.8）、**混合形态：明文 `accessToken` + 未知格式 `refreshToken` 仍返回可用 token（T13.9）、明文 + **合法但解不开**的 suite-1 信封同样返回可用 token（T13.11，判据是「最终 accessToken 是否为空」而非「有没有解不开的东西」）、两个 token 都是未知信封时如实报格式不支持（T13.10）、损坏信封报 `WB_SEARCH_CREDENTIAL_MALFORMED` 且文案指向「重新登录」而非「升级插件」（T13.12/T13.13）** |
+| T14 | 综述清理的复杂度与 `apply` 的错误码契约 | **`cleanSynthesis` 在未闭合 `<selected-refs>` 上必须是线性的（T14.1/T14.2：10 万个未闭合标签远低于 1.5s，且耗时随输入近似线性 —— 旧实现是 O(n²)，实测 88 秒并同步卡死宿主）**、清理边界九种形态（T14.3：成对/孤立/带属性/跨行/大小写混写都要清掉，普通文本含尖括号不得误伤）、真实综述正文逐字保留（T14.4）、**重复注册 provider 时翻译后的错误必须保留 `code` 与原始 `cause`、且带可操作排查步骤（T14.5/T14.6）** |
 
 > **为什么 T9.15/T9.16 是源码断言而不是行为测试**：key helper 是**另一个进程**里跑的私有绑定调用，
 > 本进程无法用自造密钥验证它。在真实 5.6.2 设备上实测发现，helper 曾把绑定名写成
@@ -73,7 +77,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 > 而 T9.5 的加解密往返用的是自造密钥，**完全测不出**这个问题。
 > 教训：凡涉及外部进程 / 私有绑定的调用，必须有源码级契约断言或真机实测。
 
-### 2.2 `tools/scenarios.mjs` — 异常路径 + 接管范围 + connect 降级 + 体系自检（S1–S9，52 项）
+### 2.2 `tools/scenarios.mjs` — 异常路径 + 接管范围 + connect 降级 + 体系自检 + 维护者脚本（S1–S10，65 项）
 
 被测对象：**插件目录**（源码态即可，因为全部离线）。**不需要凭据、不需要网络**，靠构造输入和打桩 `fetch` 实现。
 
@@ -81,13 +85,14 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 |---|---|---|
 | S1 | 空 / 空白 / 提前 abort | S1.2 纯空白查询**不得误发云端计费**；S1.3 abort 已触发则短路不发请求 |
 | S2 | 网络 / 500 / 401 / 无 body | S2.2 错误信息**不得泄漏 accessToken**；S2.4 401 → `SESSION_DEAD`（可续期，不能当普通失败） |
-| S3 | 流畸形 / 空流 | S3.1 无 done 帧 → `EMPTY_RESULT`（不静默返回空）；S3.2 done 帧坏 JSON → 降级为空结果而非崩溃；**S3.5 SSE 换行形态兼容（LF / CRLF / CR-only / 混合 / `data:` 后无空格 / 多行 data 拼接）；S3.6 `data` 拆在两个 chunk 仍拼回整帧** |
+| S3 | 流畸形 / 空流 | S3.1 无 done 帧 → `EMPTY_RESULT`（不静默返回空）；S3.2 done 帧坏 JSON → 降级为空结果而非崩溃；**S3.5 SSE 换行形态兼容（LF / CRLF / CR-only / 混合 / `data:` 后无空格 / 多行 data 拼接）；S3.6 `data` 拆在两个 chunk 仍拼回整帧；S3.7 非字符串 `synthesis.content`（数字/对象/数组/布尔）必须归因成 `UPSTREAM_ERROR` 而**不得漏出原生 TypeError**；S3.8 content 缺失/`null` 是合法空帧，仍走 `EMPTY_RESULT`（不得误报成协议违约）** |
 | S4 | 凭据垃圾输入 | S4.1 六种垃圾输入均返回安全值；**S4.1b/S4.1c/S4.1d 未知加密算法版本的三条边界（仍算有凭据、明文 token 不被整体拒绝、两个都是未知信封时如实报 unsupported-suite）**；S4.4 无凭据时 `available()` 返回 `false` 而非抛 |
 | S5 | 平台路径分层 + 跨平台模拟 | S5.1 env 覆盖排在 `credentialPaths()` 首位；S5.2 `desktopAuthFiles()` **刻意不含** env 覆盖 |
 | S6 | 并发 / 10 万字符 / abort | S6.1 五路并发不串流；S6.3 abort 须在 1500ms 内返回 |
 | S7 | **接管范围** | S7.2 源码中**不存在** `registerFetchProvider`（只管搜索）；S7.3 patch 里复述了 `fetchProvider: http` |
 | S8 | **体系自检** | S8.1/S8.3 两份文档必须存在；S8.2 TESTING.md 必须同时引用 regression 与 scenarios 两个套件；S8.4 CI 必须已接线 |
 | S9 | **装了 connect 但 connect 坏了** | S9.1/S9.3 connect 返回过期/空 token 时**不得采信**（否则会拿死 token 去搜索并报 401，且不回落到自带路径）；S9.4/S9.5 connect 抛错或包 import 失败时静默降级；S9.6/S9.7 `forceRefresh` 必须走自带路径的显式 refresh，不复用 connect 的旧 token |
+| S10 | **维护者脚本**（发布 / 上架） | S10.1/S10.2/S10.3 `resolve_root` 的输出必须能被 node 的 `require` 解析，且不得是 MSYS 形态（`publish.sh` 的第一步就在这里崩过：Git Bash 的 `/d/...` 路径 node 认不出）；S10.4 端口探测**不得依赖 `nc`**（把 `nc` 覆盖成必定失败，仍要探到真实监听的端口）；S10.5 `CONNECT tunnel failed, response 502` 必须归类为「连不上」且不误判成缺凭据；S10.6 `submit-market.sh --dry-run` 必须**离线**完成（代理指向死端口仍返回 0）；S10.7 clone 失败时非零退出 + **回显 git 原始 stderr** + 归因为「连不上 GitHub」而不是「你没 fork」；S10.8 防回退（两个脚本都必须 source `contrib/lib.sh`，不得再回到裸 `ROOT="$PWD"`） |
 
 > **S9 守的是「connect 只是可选增强」这句承诺的另一半。**
 > 文档一直说「装了 connect 更好、不装也能用」，但「装了」和「装了且好用」是两回事：
@@ -102,11 +107,27 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 >    上面第 1 条就是这样发现的——未加隔离前，S9.3/S9.5 在变异体上依然「通过」。
 >    （顺便也确认了 S9.4/S9.5 属于「本来就对」的守护用例，而非回归用例，这点如实标注。）
 
+> **S10 守的是「发布链本身」。** 其余各组都在测插件运行时，只有 S10 测**维护者手上的脚本**——
+> 而这两个脚本恰好是唯一长期没有测试的一段，于是同时踩了两个相反的坑：一个在本机
+> **一步都跑不动**（`ROOT="$PWD"` 的 MSYS 路径交给 node 的 `require()`），一个**永久挂死**
+> （代理探测依赖 `nc`，而 Git Bash 自带的 PortableGit 没有 `nc` → 静默判定「没有代理」→
+> 直连 GitHub；同时 clone 的 stderr 被 `2>/dev/null` 吞掉，连原因都看不到）。
+>
+> ⚠️ **这组用例刻意不写「断言源码文本」，而是断言行为**：全部用真实的 `bash` / `git` / `node`，
+> 需要失败时就把 `DSH_GIT_PROXY` 指向一个必然不通的端口（`127.0.0.1:1`）——
+> 于是既不依赖网络、也不需要任何桩，且「脚本真的尝试联网了没有」是可断言的：
+> 代理不通时 `--dry-run` 仍返回 0，就证明它确实没联网。
+> 唯一的例外是 S10.7，它是有意保留的文本断言，用来防止有人把 `resolve_root` 再改回 `$PWD`
+> （行为断言只能证明「现在的实现是对的」，防不住回退）。
+>
+> 两个脚本共用的逻辑（根路径解析、代理探测、超时包装、失败归因）已抽到 `contrib/lib.sh`——
+> **抽出来的唯一理由是让它可被测试**：留在脚本里就只能靠「跑一遍发布」来验。
+
 > **S7 是本插件最容易被误解、也最容易在重构中被改坏的地方**：一旦有人「顺手」把抓取也接管了，S7.2/S7.3 会立刻红。
 >
 > **S8 保护的是「体系化」这件事本身**：如果哪天有人删了 `TESTING.md`、或把套件从 CI 里摘掉，S8 会立刻红——防止「又回到每次重新推演」的状态。
 
-### 2.3 `tools/check-github-meta.mjs` — GitHub 元数据自检（G1–G9，39 项）
+### 2.3 `tools/check-github-meta.mjs` — GitHub 元数据自检（G1–G9，40 项）
 
 被测对象：**仓库根目录**。这一层不测插件运行时，而是测**仓库在 GitHub 上的"门面"是否齐备且格式合法**——
 缺文件只会掉勾，但 **Issue 表单格式错会让 GitHub 整份拒收**，所以要钉住。
@@ -215,7 +236,7 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 ```
 ① 归类      ── 这条反馈属于场景地图(§1)的哪一段？
 ② 落用例    ── 先写一条会在旧代码上 FAIL 的 check，放进对应套件
-               （正常路径→regression，异常路径→scenarios）
+               （正常路径→regression，异常路径→scenarios，维护者脚本→scenarios 的 S10）
 ③ 跑全套    ── node tools/regression.mjs ... && node tools/scenarios.mjs ...
                确认「新 check 红、老 check 全绿」（证明你复现了，且没顺手改坏别的）
 ④ 改代码    ── 只改到新 check 转绿
@@ -250,6 +271,10 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 | 无 connect 也能跑 | T9 | — | ✅ 离线 |
 | **connect 装了但坏了**（返回死 token / 抛错 / 包坏） | — | S9.1–S9.7 | ✅ 离线（伪造 connect 包） |
 | 超长 query / 并发 | T8.3 | S6.1 / S6.2 | ✅ 离线 |
+| **综述清理的性能**（未闭合内部标记） | T14.1 / T14.2 | — | ✅ 离线 |
+| **上游给了非字符串 `synthesis.content`** | — | S3.7 / S3.8 | ✅ 离线（打桩） |
+| **provider id 被别的插件占用** | T14.5 / T14.6 | — | ✅ 离线 |
+| **维护者脚本**（发布 / 上架在本机跑得动） | — | S10.1–S10.8 | ✅ 离线（真实 bash/git + 死代理） |
 | **测什么永远不丢**（体系自检） | — | S8.1–S8.4 | ✅ 离线 |
 | **版本策略**（不锁上限、声明已验证版本） | T2.7–T2.10 | — | ✅ 离线 |
 | **仓库门面**（社区档案/模板格式） | — | G1.1–G6.2 | ✅ 离线 |
@@ -294,6 +319,22 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 把查询失败也缓存 / darwin 平台守卫失效），断言 T10.35·T10.40 / T10.38 / T10.44 / T10.47
 **确实变红**——即这几条护栏不是恒真。该脚本用 **Python 而非 Node** 起子进程：
 本机环境下 Node 的 `spawnSync` 被拦（EBUSY），拿不到子进程输出。
+
+**v0.3.5 新增的护栏**（T6.11、T14.1–T14.6、S3.7、S3.8、S10.1–S10.8）由 `.local/mutate-v035.mjs`
+验证：注入 10 个「把修复回退」的变异体（`cleanSynthesis` 退回惰性正则 / 去掉全函数保护 /
+`?? ""` 回归 / 翻译错误时丢掉 `code` / `resolve_root` 回到 `$PWD` / `port_open` 只靠 `nc` /
+归因正则漏掉 `CONNECT tunnel failed` / `--dry-run` 不再提前返回 / 吞掉 clone 的 stderr /
+`submit-market.sh` 不再 source `lib.sh`），断言对应 check **确实变红**，并在结束时校验所有文件已逐字节还原。
+（本机 Node 的 `spawnSync` 已恢复可用，故这次用 Node 写。）
+
+> ⚠️ **这轮变异测试立刻抓出一条假护栏。** S10.1 最初写成「在当前目录下跑 `resolve_root`，
+> 看输出能不能被 node 的 `require` 解析」—— 而 node 的 `spawnSync` 传 `cwd` 给 bash 时，
+> bash 里的 `$PWD` 拿到的已经是 Windows 形态（`<盘符>:/...`），**真实 MSYS 形态只在 Git Bash
+> 交互/脚本环境里出现**。于是把 `resolve_root` 改回 `$PWD` 后这条用例依然全绿。
+> 现在改为「打桩 `cygpath` + 直接注入 MSYS 形态的 `$PWD`」，断言输出不得是 MSYS 形态 ——
+> 跨平台可复现，且不绑定实现（换成 `sed` 之类的转换手段同样通过）。
+> 教训：**「在测试环境里跑一遍」不等于「复现了用户现场」**；环境差异（这里是 shell 传给
+> 子进程的 `$PWD` 形态）会让复现条件悄悄失效，而只有变异测试能把它照出来。
 
 ---
 

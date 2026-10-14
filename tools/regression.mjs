@@ -223,6 +223,20 @@ check("T6.7", I.parseWorkBuddyAuth(JSON.stringify({ auth: {} })) === undefined, 
 check("T6.8", I.regionOf("www.workbuddy.ai") === "global" && I.regionOf("copilot.tencent.com") === "cn", "regionOf 域名分流正确");
 check("T6.9", I.chatBase({ domain: "www.workbuddy.ai" }) === "https://www.workbuddy.ai", "chatBase 国际版网关");
 check("T6.10", I.chatBase({ domain: "" }) === "https://copilot.tencent.com", "chatBase 空域名 → 国内网关");
+// T6.11 cleanSynthesis 必须是**全函数**：非字符串输入返回空串，不得抛原生 TypeError。
+//      调用方（callAgenticSearch）会先把「上游给了非字符串 content」转成带 code 的错误，
+//      但 `__internals.cleanSynthesis` 也被单测/探针直接调用，不能在这里漏出原生异常。
+{
+  const junk = [123, null, undefined, {}, [], true, Symbol("s")];
+  let threw = "";
+  for (const v of junk) {
+    try {
+      const r = I.cleanSynthesis(v);
+      if (r !== "") threw += ` ${String(v)}→${JSON.stringify(r)}`;
+    } catch (e) { threw += ` ${String(v)} 抛 ${e.constructor.name}`; }
+  }
+  check("T6.11", threw === "", `cleanSynthesis 对非字符串返回空串（不抛原生异常）${threw}`);
+}
 
 // ── T7 错误路径 ──
 section("T7 错误路径与可用性");
@@ -1613,6 +1627,109 @@ section("T13 未知加密算法版本 → 不得误报「未登录」");
     } finally {
       try { rmSync(tmp, { recursive: true, force: true }); } catch {}
     }
+  }
+}
+
+// ── T14 cleanSynthesis 的复杂度/边界，以及 apply() 的错误码契约（v0.3.5 修复） ──
+section("T14 综述清理的复杂度与 apply 的错误码契约");
+{
+  // T14.1–T14.2 未闭合 `<selected-refs>` 上的复杂度必须是**线性**的。
+  //
+  // 旧实现是一条惰性正则 `/<selected-refs>[\s\S]*?<\/selected-refs>/`：每个起点都要
+  // 向后扫到字符串末尾，去找一个并不存在的闭标签，于是整体 O(n²)。实测 100k 个未闭合
+  // 标签要 **88 秒**，而 cleanSynthesis 是同步的 —— 会把 dsh 主进程整个卡死。
+  // 同时钉住**绝对耗时**与**缩放比**：只看绝对值会被机器快慢影响；只看缩放比则可能
+  // 放过一个常数极大、在真实输入规模上就已经不可用的实现。
+  {
+    const time = (n) => {
+      const s = "<selected-refs>".repeat(n);
+      const t0 = process.hrtime.bigint();
+      I.cleanSynthesis(s);
+      return Number(process.hrtime.bigint() - t0) / 1e6;
+    };
+    const t32k = time(32_000);
+    const t100k = time(100_000);
+    check(
+      "T14.1",
+      t100k < 1500,
+      `10 万个未闭合 <selected-refs> 清理耗时 ${Math.round(t100k)}ms（旧实现约 88000ms）`,
+    );
+    // 32k → 100k 是 3.1 倍输入；线性实现应约 3 倍。给 8 倍余量以容忍计时抖动。
+    check(
+      "T14.2",
+      t100k <= Math.max(t32k, 2) * 8,
+      `耗时随输入近似线性（32k=${Math.round(t32k)}ms → 100k=${Math.round(t100k)}ms，约 ${(t100k / Math.max(t32k, 0.01)).toFixed(1)} 倍）`,
+    );
+  }
+
+  // T14.3 清理边界：成对/孤立/带属性/跨行的标签都要清掉，普通文本不得被误伤。
+  //      其中「带属性的开标签」是旧实现的一处真实漏洞：它要求 `>` 紧跟标签名，
+  //      `<selected-refs id="1">` 两种模式都匹配不上，于是整段内容原样漏进综述。
+  {
+    const cases = [
+      ["成对标签整段清掉", "前<selected-refs>X</selected-refs>后", "前后"],
+      ["孤立开标签只清标签本身", "孤<selected-refs>标记", "孤标记"],
+      ["带属性的开标签（旧实现漏掉）", 'A<selected-refs id="1">X</selected-refs>B', "AB"],
+      ["只有闭标签、没有配对开标签", "A</selected-refs>B", "AB"],
+      ["成对 + 尾部未闭合开标签", "<selected-refs>A</selected-refs>B<selected-refs>C", "BC"],
+      ["闭标签在前、开标签在后", "</selected-refs>A<selected-refs>B</selected-refs>C", "AC"],
+      ["跨行内容", "A<selected-refs>\n1\n2\n</selected-refs>B", "AB"],
+      ["无标签时原样保留（含尖括号）", "a < b > c", "a < b > c"],
+      ["大小写混写", "A<SELECTED-REFS>x</SELECTED-REFS>B", "AB"],
+    ];
+    let bad = [];
+    for (const [label, input, want] of cases) {
+      const got = I.cleanSynthesis(input);
+      if (got !== want) bad.push(`${label}: ${JSON.stringify(got)}≠${JSON.stringify(want)}`);
+    }
+    check("T14.3", bad.length === 0, `标签清理边界正确（${cases.length} 种形态）${bad.length ? " → " + bad.join("; ") : ""}`);
+  }
+
+  // T14.4 真实综述不得被误伤：除了内部标记，正文（含 markdown 链接与中文）必须逐字保留。
+  {
+    const body = "## 结论\n见 [A股行情](https://example.com/a) 与 https://example.com/b。\n\n第二段。";
+    const wrapped = `前<selected-refs>SOURCE_TYPE_SERP_WEB</selected-refs>${body}`;
+    check(
+      "T14.4",
+      I.cleanSynthesis(wrapped) === `前${body}`,
+      "真实综述正文逐字保留（只剥内部标记，不动 markdown/中文/换行）",
+    );
+  }
+
+  // T14.5–T14.6 重复注册：翻译后的错误必须**保留 code**。
+  //
+  // 翻译层只该换消息，不该丢码 —— 宿主按 code 分类（而不是按消息文本）。此前只把
+  // code 留在 `cause` 上，`error.code` 是 undefined，上层无法据此判定「是重复注册」。
+  {
+    const registry = new Map();
+    const ctx = {
+      web: {
+        registerSearchProvider(p) {
+          if (registry.has(p.id)) {
+            const e = new Error("duplicate provider id");
+            e.code = "WEB_DUPLICATE_PROVIDER";
+            throw e;
+          }
+          registry.set(p.id, p);
+        },
+      },
+      config: undefined,
+      root: {},
+    };
+    mod.apply(ctx);
+    let err;
+    try { mod.apply(ctx); } catch (e) { err = e; }
+    check(
+      "T14.5",
+      err !== undefined && err.code === "WEB_DUPLICATE_PROVIDER",
+      `重复注册 → 翻译后的错误保留 code（实得 ${JSON.stringify(err?.code)}）`,
+    );
+    const msg = String(err?.message ?? "");
+    check(
+      "T14.6",
+      msg.includes("排查") && msg.includes(I.PROVIDER_ID) && err?.cause?.code === "WEB_DUPLICATE_PROVIDER",
+      "重复注册的指引可操作（含排查步骤 + provider id），且保留原始 cause",
+    );
   }
 }
 
