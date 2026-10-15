@@ -80,7 +80,7 @@ CODE_OF_CONDUCT.md                           # Contributor Covenant v2.1
 .github/ISSUE_TEMPLATE/feature_request.yml   # 功能请求表单（6 项，含"不接管抓取"提示）
 .github/ISSUE_TEMPLATE/config.yml            # 关闭空白 Issue，引导先读文档
 .github/dependabot.yml                       # 只盯 GitHub Actions
-tools/check-github-meta.mjs                  # GitHub 元数据自检（G1–G9，39 项）
+tools/check-github-meta.mjs                  # GitHub 元数据自检（G1–G9，40 项）
 ```
 
 **改动文件**
@@ -248,6 +248,19 @@ node tools/check-github-meta.mjs "$PWD"
 
 当前：**40 PASS / 0 FAIL / 0 WARN**。
 
+### 7.1 推送前 / 推送后必做
+
+```bash
+# 1) 推送前：本地自检 —— G1–G9 全绿才允许推
+node tools/check-github-meta.mjs "$PWD"
+
+# 2) 推送后：确认 CI 绿 —— 推送不是终点，CI 绿才算完成
+#    https://github.com/arnen7000/DSH-Workbuddy-WebSearch/actions/workflows/ci.yml
+```
+
+三套件里 `regression` / `scenarios` 由 CI 在 Linux 上跑（本机沙箱跑不全），`github-meta` 两边都跑。
+**CI 未绿不得视为「已推送完成」。**
+
 ---
 
 ## 8. 落地状态
@@ -367,7 +380,7 @@ node tools/check-github-meta.mjs "$PWD"
 **改动 README 后的必做动作**
 
 ```bash
-node tools/check-github-meta.mjs "$PWD"   # G1–G9，39 项
+node tools/check-github-meta.mjs "$PWD"   # G1–G9，40 项
 node tools/regression.mjs "$PWD"          # T1–T13
 node tools/scenarios.mjs "$PWD"           # S1–S9
 node .local/check-links.mjs "$PWD"        # L1–L4（L4 = README 目录完整性，最易被漏）
