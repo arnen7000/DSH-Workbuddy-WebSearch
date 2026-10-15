@@ -15,7 +15,7 @@
 
 url: https://github.com/arnen7000/DSH-Workbuddy-WebSearch
 name: arnen7000/DSH-Workbuddy-WebSearch
-category: browser
+category: tools
 description:
-  en: 'Web search provider for the built-in web_search tool that reuses the WorkBuddy desktop app sign-in, so searches run on the WorkBuddy account without an API key and come back as cited summaries.'
-  zh: '把 WorkBuddy 桌面 App 的网络搜索接入内置 web_search 工具的搜索 provider：复用桌面端登录态，无需 API Key，返回带引用来源的综述文本。'
+  en: Makes the WorkBuddy desktop app's web search the dsh web_search provider, reusing the app's existing sign-in with no extra configuration.
+  zh: 把 WorkBuddy 桌面 App 的网络搜索作为 dsh 的 web_search 提供方，复用 App 已有的登录状态，无需额外配置。

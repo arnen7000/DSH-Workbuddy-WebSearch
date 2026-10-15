@@ -17,10 +17,10 @@ data/plugins/arnen7000__DSH-Workbuddy-WebSearch.yml
 ```yaml
 url: https://github.com/arnen7000/DSH-Workbuddy-WebSearch
 name: arnen7000/DSH-Workbuddy-WebSearch
-category: browser
+category: tools
 description:
-  en: 'Web search provider for the built-in web_search tool that reuses the WorkBuddy desktop app sign-in, so searches run on the WorkBuddy account without an API key and come back as cited summaries.'
-  zh: '把 WorkBuddy 桌面 App 的网络搜索接入内置 web_search 工具的搜索 provider：复用桌面端登录态，无需 API Key，返回带引用来源的综述文本。'
+  en: Makes the WorkBuddy desktop app's web search the dsh web_search provider, reusing the app's existing sign-in with no extra configuration.
+  zh: 把 WorkBuddy 桌面 App 的网络搜索作为 dsh 的 web_search 提供方，复用 App 已有的登录状态，无需额外配置。
 ```
 
 > 文件名必须与 `slugFor(url)` 完全一致（大小写敏感）。
@@ -36,39 +36,79 @@ description:
 Add dsh-workbuddy-websearch: web_search provider backed by the WorkBuddy desktop sign-in
 ```
 
+> 标题是**唯一保持单语英文**的字段：GitHub 的 PR 列表列会截断，双语标题反而更难扫读。
+> 除此之外，PR 描述、PR/issue 评论一律中英对照（英文在前、中文紧随）。
+
 ## 三、PR 描述（直接复制）
 
+> 中英对照：维护者以英文阅读为主，所以英文在前、中文紧随其后。仓库本身也是双语
+> （条目 `description` 就有 `en` / `zh` 两个键），因此中文出现在 PR 描述里不违和。
+
 ```markdown
-## What this plugin does
+## What this plugin does / 这个插件做什么
 
 `dsh-workbuddy-websearch` registers a `web_search` provider (`workbuddy-agentic`) that
 routes the built-in `web_search` tool to the WorkBuddy desktop app's cloud agentic
 search, reusing the app's existing sign-in. No API key is required, and results come
 back as a summary with cited sources.
 
-- Repo: https://github.com/arnen7000/DSH-Workbuddy-WebSearch
-- npm: https://www.npmjs.com/package/dsh-workbuddy-websearch
-- License: MIT
+`dsh-workbuddy-websearch` 以 id `workbuddy-agentic` 注册一个 `web_search` provider，
+把内置的 `web_search` 工具接到 WorkBuddy 桌面 App 的云端 agentic 检索上，复用 App
+已有的登录态。无需 API Key，返回带引用来源的综述文本。
 
-## Checklist
+- Repo / 仓库: https://github.com/arnen7000/DSH-Workbuddy-WebSearch
+- npm: https://www.npmjs.com/package/dsh-workbuddy-websearch
+- License / 许可证: MIT
+
+## What the code does / 代码具体做了什么
+
+- Registers the provider under the id `workbuddy-agentic`; `searchProvider` is pinned,
+  so the choice does not depend on registration order.
+  以 id `workbuddy-agentic` 注册 provider；`searchProvider` 是钉住的，与注册顺序无关。
+- Read-only on the desktop app's credential files; token refresh stays in memory and is
+  never written back. The domestic and international editions are never mixed, and the
+  newer `$wbEncrypted` credential format is decrypted.
+  对桌面 App 的凭据文件只读；token 刷新只发生在内存里，从不回写。国内版 / 国际版不混用；
+  能解开较新的 `$wbEncrypted` 加密凭据。
+- Returns a summary plus a de-duplicated source list; every failure carries a
+  classifiable code (`WB_SEARCH_BAD_REQUEST` / `TRANSPORT_ERROR` / `UPSTREAM_ERROR` /
+  `SESSION_DEAD` / `CREDENTIAL_MISSING` / `CREDENTIAL_MALFORMED` /
+  `CREDENTIAL_UNSUPPORTED_FORMAT` / `EMPTY_RESULT` / `WEB_ABORTED`).
+  返回综述 + 去重后的来源列表；所有失败都带可分类的错误码（见上），宿主可据此处理。
+- Takes over `web_search` only — `web_fetch` is left to the built-in `web-fetch-http`
+  (the bundle patch restates `fetchProvider: http`).
+  只接管 `web_search`；`web_fetch` 仍走内置（bundle patch 里重申 `fetchProvider: http`）。
+- Test suite in the repo: 183 contract + 68 scenario/edge-case + 40 metadata checks, all
+  green. Every new guard is verified by mutation testing, so it cannot be vacuously true.
+  仓库自带测试：183 条契约 + 68 条场景/异常 + 40 条元信息检查，全绿；每条新护栏都做过
+  变异测试，确保不是恒真。
+
+## Checklist / 自查清单
 
 - [x] `dsh.bundle` is declared in `package.json`
-      (`{"bundle":{"patch":"./cordis.patch.yml"}}`)
-- [x] The repo is older than 1 day
+      (`{"bundle":{"patch":"./cordis.patch.yml"}}`) / 已声明 `dsh.bundle`
+- [x] The repo is older than 1 day / 仓库已超过 1 天
 - [x] Published on npm, and the package's `repository` field points back at this repo
       (so `npm` / version / downloads link automatically)
+      / 已发布到 npm，且 `repository` 指回本仓库（`npm` / 版本 / 下载量自动关联）
 - [x] Ships real behaviour (registers a search provider), not just a dependency list
-- [x] Only adds my own entry — no other files touched
-- [x] One entry in this PR
+      / 有真实行为（注册 search provider），不是纯依赖清单
+- [x] Only adds my own entry — no other files touched / 只新增自己这一条，未改动其他文件
+- [x] One entry in this PR / 本 PR 只加 1 条
 
-## Notes
+## Notes / 补充说明
 
-- Category `browser` follows the other web-search-provider plugins already listed
-  (e.g. `dsh-plugin-tavily`, `dsh-web-search-firecrawl`).
+- Category `tools` — upstream `CAT_IDS` accepts both `tools` and `browser`; `tools` was
+  chosen because the plugin's entire job is backing one built-in tool (`web_search`),
+  and it is one of the most widely used categories in the catalog.
+  分类选了 `tools`：上游 `CAT_IDS` 里 `tools` 与 `browser` 都合法；选 `tools` 是因为本插件的
+  全部工作就是支撑一个内置工具（`web_search`），且它是目录里最常用的分类之一。
 - The plugin only takes over `web_search`; `web_fetch` is left to the built-in
   `web-fetch-http` (the bundle patch restates `fetchProvider: http`).
+  本插件只接管 `web_search`，抓取仍走内置。
 - It reads the WorkBuddy desktop app's local credential file read-only; token refresh
   happens in memory only and is never written back to disk.
+  对桌面 App 的本地凭据文件只读；token 刷新只在内存中，绝不回写磁盘。
 ```
 
 ---
