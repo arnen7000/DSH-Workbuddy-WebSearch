@@ -575,7 +575,7 @@ connect + memory-evolve + better-sidebar + cost-meter + genui，把搜索插件�
 | S6.3 | 中途 abort | **快速返回**（实测 <150ms），不等云端跑完 | ✅ |
 | S7.1–3 | 接管范围 | 只注册 search，不注册 fetch；patch 保留 fetchProvider | ✅ |
 | S9.1–9.7 | **connect 装了但坏了** | 返回死 token / 空 token 时**不采信**并回落自带路径；抛错或包坏时静默降级；`forceRefresh` 不复用 connect 的旧 token | ✅ |
-| S10.1–8 | **维护者脚本**（发布 / 上架） | 仓库根路径能被 node 解析、端口探测不依赖 `nc`、`CONNECT tunnel failed` 归因正确、`--dry-run` 真离线、clone 失败回显原始 stderr 并归因为「连不上」 | ✅ |
+| S10.1–10 | **维护者脚本**（发布 / 上架） | 仓库根路径能被 node 解析、端口探测不依赖 `nc`、`CONNECT tunnel failed` 归因正确、`--dry-run` 真离线、clone 失败回显原始 stderr 并归因为「连不上」、**git 静默挂起被超时杀掉（输出为空）时仍单独归因成「超时」而不是空兜底** | ✅ |
 
 > **S6.3 的意义**：abort 若无效，用户按了取消仍会付一次完整的云端检索费用。
 > 实测入口短路 + 收流竞态兜底共同生效，是「省钱」的关键路径。

@@ -28,8 +28,15 @@ DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
 
 # 从本仓库的 remote 推断 fork 的 owner（默认分支的 origin）。
+# ⚠️ 读不到必须**带话退出**：`set -o pipefail` + `set -e` 之下，没有 origin 时这条管道
+#    会返回非零，裸写就是「一声不响地中止」（零输出），用户根本不知道缺的是什么。
 cd "${SELF_DIR}/.."
-OWNER="$(git remote get-url origin | sed -E 's#.*[:/]([^/]+)/[^/]+(\.git)?$#\1#')"
+OWNER="$(git remote get-url origin 2>/dev/null | sed -E 's#.*[:/]([^/]+)/[^/]+(\.git)?$#\1#' || true)"
+if [ -z "$OWNER" ]; then
+  echo "✗ 读不出本仓库的 origin remote（无法推断你的 GitHub 账号）。" >&2
+  echo "  请先设置：git remote add origin https://github.com/<你的账号>/<仓库>.git" >&2
+  exit 1
+fi
 FORK="${OWNER}/${UPSTREAM##*/}"
 
 echo "上游：    ${UPSTREAM}"
@@ -75,32 +82,40 @@ fi
 
 # 网络失败归因：把「连不上」与「没 fork / 没权限」分开报 —— 两者的补救方式完全不同。
 diagnose_fetch_failure() {
-  local out="$1"
-  if is_network_failure "$out"; then
-    echo "✗ 拉取 ${FORK} 失败：**连不上 GitHub**（不是 fork 或权限问题）。" >&2
+  local out="$1" status="${2:-}"
+  if is_timeout_status "$status"; then
+    # 超时被杀时输出是**空的**，只按文本归因会落到「未知原因」，等于没说。
+    echo "✗ 拉取/推送 ${FORK} 超时（$(git_timeout_secs)s 内无任何响应）。这基本只意味着**连不上 GitHub**。" >&2
+    echo "  - 当前代理设置：${PROXY:-（直连）}" >&2
+    echo "  - 可显式指定代理：DSH_GIT_PROXY=http://127.0.0.1:7890 bash $0" >&2
+    echo "  - 或强制直连：  DSH_GIT_PROXY= bash $0" >&2
+    echo "  - 调整等待上限：DSH_GIT_TIMEOUT=300 bash $0" >&2
+  elif is_network_failure "$out"; then
+    echo "✗ 拉取/推送 ${FORK} 失败：**连不上 GitHub**（不是 fork 或权限问题）。" >&2
     echo "  - 当前代理设置：${PROXY:-（直连）}" >&2
     echo "  - 可显式指定代理：DSH_GIT_PROXY=http://127.0.0.1:7890 bash $0" >&2
     echo "  - 或强制直连：  DSH_GIT_PROXY= bash $0" >&2
   elif is_auth_failure "$out"; then
-    echo "✗ 拉取 ${FORK} 失败：**无权限或仓库不存在**。" >&2
+    echo "✗ 拉取/推送 ${FORK} 失败：**无权限或仓库不存在**。" >&2
     echo "  若还没 fork，请先打开：https://github.com/${UPSTREAM}/fork" >&2
     echo "  或确认本机有 GitHub 写权限（PAT / SSH）。" >&2
   else
-    echo "✗ 拉取 ${FORK} 失败（60s 超时或未知原因）。" >&2
+    echo "✗ 拉取/推送 ${FORK} 失败（原因见上方 git 输出）。" >&2
     echo "  若还没 fork，请先打开：https://github.com/${UPSTREAM}/fork" >&2
   fi
 }
 
 echo "== 拉取你的 fork =="
-clone_out=""
 # ⚠️ 两道保险，缺一不可：
 #   - `2>&1` 捕获 stderr：早先写成 `2>/dev/null`，失败原因（网络/权限）全被吞掉，
 #     用户只看到一句「克隆失败」，而这句话把网络问题指向了「你没 fork」；
-#   - 套 60s 超时：GitHub 直连不通时 `git clone` 会**永久挂起**，脚本不返回、
-#     也不报错，只能靠人肉 Ctrl-C。
-if ! clone_out="$(run_with_timeout 60 "${GIT[@]}" clone --depth 1 "https://github.com/${FORK}.git" "$WORK/repo" 2>&1)"; then
+#   - 套超时：GitHub 直连不通时 `git clone` 会**永久挂起**，脚本不返回、也不报错，
+#     只能靠人肉 Ctrl-C（超时秒数可用 DSH_GIT_TIMEOUT 调整）。
+clone_status=0
+clone_out="$(run_with_timeout "$(git_timeout_secs)" "${GIT[@]}" clone --depth 1 "https://github.com/${FORK}.git" "$WORK/repo" 2>&1)" || clone_status=$?
+if [ "$clone_status" != "0" ]; then
   printf '%s\n' "$clone_out" >&2
-  diagnose_fetch_failure "$clone_out"
+  diagnose_fetch_failure "$clone_out" "$clone_status"
   exit 1
 fi
 cd "$WORK/repo"
@@ -118,10 +133,11 @@ git -c user.name="$OWNER" -c user.email="${OWNER}@users.noreply.github.com" \
   commit -q -m "Add dsh-workbuddy-websearch: web_search provider backed by the WorkBuddy desktop sign-in"
 
 echo "== 推送分支到你的 fork =="
-push_out=""
-if ! push_out="$(run_with_timeout 60 "${GIT[@]}" push origin "$BRANCH" 2>&1)"; then
+push_status=0
+push_out="$(run_with_timeout "$(git_timeout_secs)" "${GIT[@]}" push origin "$BRANCH" 2>&1)" || push_status=$?
+if [ "$push_status" != "0" ]; then
   printf '%s\n' "$push_out" >&2
-  diagnose_fetch_failure "$push_out"
+  diagnose_fetch_failure "$push_out" "$push_status"
   exit 1
 fi
 printf '%s\n' "$push_out"

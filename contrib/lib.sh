@@ -90,6 +90,20 @@ resolve_proxy() {
 
 # ───────────────────────── 超时包装 ─────────────────────────
 
+# git 调用的超时秒数（默认 120s，可用 DSH_GIT_TIMEOUT 覆盖）。
+#
+# 为什么必须有：GitHub 连不上时 git 会**静默等待**，既不报错也不返回、连一行输出
+# 都没有 —— 于是「等它自己失败」是等不到的，只能靠超时兜。而超时被杀掉时输出为空，
+# 所以调用方**必须单独识别退出码 124**，否则归因会落到「见上方输出」而上方一片空白。
+git_timeout_secs() {
+  printf '%s' "${DSH_GIT_TIMEOUT:-120}"
+}
+
+# 退出码是否来自 `timeout` 超时（GNU coreutils 约定 124）。
+is_timeout_status() {
+  [ "${1:-}" = "124" ]
+}
+
 # run_with_timeout <秒> <命令...>：有 timeout 就用（GNU/Linux 与 Git Bash 自带），
 # 没有（macOS 默认）就退化为直接执行 —— 至少不会因为缺一个命令就整体失败。
 run_with_timeout() {

@@ -53,7 +53,16 @@ if [ -z "$NODE" ] || [ ! -x "$NODE" ]; then
 fi
 
 # 版本号取自 package.json —— 唯一真源，避免 tag 与包版本不一致。
-VERSION="$("$NODE" -p "require('${ROOT}/package.json').version")"
+# ⚠️ 读失败必须**带话退出**：在 `set -e` 下裸写会让脚本一声不响地中止（退出码非零、
+#    零输出），而「静默失败」正是本脚本声称要避免的事。
+VERSION="$("$NODE" -p "require('${ROOT}/package.json').version" 2>/dev/null)" || {
+  echo "✗ 读不出 ${ROOT}/package.json 的 version。请确认仓库根路径正确，或设 DSH_NODE=<node 绝对路径>。" >&2
+  exit 1
+}
+if [ -z "$VERSION" ]; then
+  echo "✗ ${ROOT}/package.json 的 version 为空。" >&2
+  exit 1
+fi
 TAG="v${VERSION}"
 
 # 注意：变量一律写 ${VAR}。中文全角括号是多字节，bash 会把它当成变量名的一部分，
@@ -97,9 +106,18 @@ fi
 # 用户与市场看到的都是旧版 —— 而本地却以为已经发布。
 #
 # 默认分支名优先取远端 HEAD 指向（origin/HEAD），回落到 main。
-DEFAULT_BRANCH="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')"
+#
+# ⚠️ `|| true` 不能省：`set -o pipefail` + `set -e` 之下，`git symbolic-ref` 找不到
+#    `refs/remotes/origin/HEAD`（例如远端是手工 add 的、或克隆时没建这个符号引用）会
+#    返回非零，于是**整个赋值失败、脚本一声不响地中止** —— 用户只看到退出码 1 和
+#    零输出，完全不知道发生了什么。回落 main 才是符合注释本意的行为。
+DEFAULT_BRANCH="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || true)"
 DEFAULT_BRANCH="${DEFAULT_BRANCH:-main}"
-CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+if [ -z "$CURRENT_BRANCH" ]; then
+  echo "✗ 取不到当前分支名（这看起来不像一个 git 仓库）。" >&2
+  exit 1
+fi
 
 if [ "$CURRENT_BRANCH" != "$DEFAULT_BRANCH" ]; then
   # 只有能快进时才允许直接推默认分支，避免把分叉历史强推上去。
@@ -124,9 +142,18 @@ echo
 #   - 认证失败 → 才是凭据问题；
 #   - 其他（如非快进）→ 原样回显 git 的话。
 diagnose_push_failure() {
-  local out="$1"
+  local out="$1" status="${2:-}"
   echo "✗ git push 失败。" >&2
-  if is_network_failure "$out"; then
+  if is_timeout_status "$status"; then
+    # ⚠️ 这一支不能少：GitHub 连不上时 git 会静默等待、连一行输出都没有，
+    #    被 `timeout` 杀掉后输出是**空的** —— 若只按输出文本归因，会落到
+    #    「见上方 git 输出」，而上方一片空白，等于什么都没说。
+    echo "  原因：**超时**（$(git_timeout_secs)s 内无任何响应）。这基本只意味着**连不上 GitHub**，不是凭据问题。" >&2
+    echo "  - 当前代理设置：${PROXY:-（直连）}" >&2
+    echo "  - 可显式指定代理：DSH_GIT_PROXY=http://127.0.0.1:7890 bash $0" >&2
+    echo "  - 或强制直连：  DSH_GIT_PROXY= bash $0" >&2
+    echo "  - 调整等待上限：DSH_GIT_TIMEOUT=300 bash $0" >&2
+  elif is_network_failure "$out"; then
     echo "  原因：**连不上 GitHub**（不是凭据问题）。" >&2
     echo "  - 当前代理设置：${PROXY:-（直连）}" >&2
     echo "  - 可显式指定代理：DSH_GIT_PROXY=http://127.0.0.1:7890 bash $0" >&2
@@ -142,24 +169,28 @@ diagnose_push_failure() {
 
 if [ "$DRY_RUN" = "1" ]; then
   echo "[dry-run] 将执行：git push origin ${PUSH_REF}"
-  # ⚠️ 套超时：GitHub 不通时 `git push` 会**永久挂起**（既不出错也不返回），
-  #    在 CI 或非交互环境里就是静默卡死。180s 对这个小仓库足够宽裕。
-  push_out="$(run_with_timeout 180 "${GIT[@]}" push --dry-run origin "$PUSH_REF" 2>&1)" || {
+  # ⚠️ 套超时：GitHub 不通时 `git push` 会**永久挂起**（既不出错也不返回、也无输出），
+  #    在 CI 或非交互环境里就是静默卡死。超时秒数可用 DSH_GIT_TIMEOUT 调整。
+  push_status=0
+  push_out="$(run_with_timeout "$(git_timeout_secs)" "${GIT[@]}" push --dry-run origin "$PUSH_REF" 2>&1)" || push_status=$?
+  if [ "$push_status" != "0" ]; then
     printf '%s\n' "$push_out" >&2
-    diagnose_push_failure "$push_out"
+    diagnose_push_failure "$push_out" "$push_status"
     exit 1
-  }
+  fi
   printf '%s\n' "$push_out"
   echo "[dry-run] 将执行：git tag $TAG && git push origin $TAG"
   exit 0
 fi
 
 echo "== 推送分支（目标：${DEFAULT_BRANCH}）=="
-push_out="$(run_with_timeout 180 "${GIT[@]}" push origin "$PUSH_REF" 2>&1)" || {
+push_status=0
+push_out="$(run_with_timeout "$(git_timeout_secs)" "${GIT[@]}" push origin "$PUSH_REF" 2>&1)" || push_status=$?
+if [ "$push_status" != "0" ]; then
   printf '%s\n' "$push_out" >&2
-  diagnose_push_failure "$push_out"
+  diagnose_push_failure "$push_out" "$push_status"
   exit 1
-}
+fi
 printf '%s\n' "$push_out"
 
 # 5) 打 tag 并推送。tag 与 package.json 版本必须一致（CI 也卡这条）。
@@ -171,7 +202,13 @@ else
 fi
 
 echo "== 推送标签 =="
-run_with_timeout 180 "${GIT[@]}" push origin "$TAG"
+tag_status=0
+run_with_timeout "$(git_timeout_secs)" "${GIT[@]}" push origin "$TAG" || tag_status=$?
+if [ "$tag_status" != "0" ]; then
+  echo "✗ 推送标签 $TAG 失败（分支已推送成功，可单独重试这一步）。" >&2
+  diagnose_push_failure "" "$tag_status"
+  exit 1
+fi
 
 # ⚠️ 关键：**推 tag 本身不会触发发布**。
 # .github/workflows/publish.yml 的触发条件是 `release: types: [published]`

@@ -77,7 +77,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 > 而 T9.5 的加解密往返用的是自造密钥，**完全测不出**这个问题。
 > 教训：凡涉及外部进程 / 私有绑定的调用，必须有源码级契约断言或真机实测。
 
-### 2.2 `tools/scenarios.mjs` — 异常路径 + 接管范围 + connect 降级 + 体系自检 + 维护者脚本（S1–S10，65 项）
+### 2.2 `tools/scenarios.mjs` — 异常路径 + 接管范围 + connect 降级 + 体系自检 + 维护者脚本（S1–S10，68 项）
 
 被测对象：**插件目录**（源码态即可，因为全部离线）。**不需要凭据、不需要网络**，靠构造输入和打桩 `fetch` 实现。
 
@@ -92,7 +92,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 | S7 | **接管范围** | S7.2 源码中**不存在** `registerFetchProvider`（只管搜索）；S7.3 patch 里复述了 `fetchProvider: http` |
 | S8 | **体系自检** | S8.1/S8.3 两份文档必须存在；S8.2 TESTING.md 必须同时引用 regression 与 scenarios 两个套件；S8.4 CI 必须已接线 |
 | S9 | **装了 connect 但 connect 坏了** | S9.1/S9.3 connect 返回过期/空 token 时**不得采信**（否则会拿死 token 去搜索并报 401，且不回落到自带路径）；S9.4/S9.5 connect 抛错或包 import 失败时静默降级；S9.6/S9.7 `forceRefresh` 必须走自带路径的显式 refresh，不复用 connect 的旧 token |
-| S10 | **维护者脚本**（发布 / 上架） | S10.1/S10.2/S10.3 `resolve_root` 的输出必须能被 node 的 `require` 解析，且不得是 MSYS 形态（`publish.sh` 的第一步就在这里崩过：Git Bash 的 `/d/...` 路径 node 认不出）；S10.4 端口探测**不得依赖 `nc`**（把 `nc` 覆盖成必定失败，仍要探到真实监听的端口）；S10.5 `CONNECT tunnel failed, response 502` 必须归类为「连不上」且不误判成缺凭据；S10.6 `submit-market.sh --dry-run` 必须**离线**完成（代理指向死端口仍返回 0）；S10.7 clone 失败时非零退出 + **回显 git 原始 stderr** + 归因为「连不上 GitHub」而不是「你没 fork」；S10.8 防回退（两个脚本都必须 source `contrib/lib.sh`，不得再回到裸 `ROOT="$PWD"`） |
+| S10 | **维护者脚本**（发布 / 上架） | S10.1/S10.2/S10.3 `resolve_root` 的输出必须能被 node 的 `require` 解析，且不得是 MSYS 形态（`publish.sh` 的第一步就在这里崩过：Git Bash 的 `/d/...` 路径 node 认不出）；S10.4 端口探测**不得依赖 `nc`**（把 `nc` 覆盖成必定失败，仍要探到真实监听的端口）；S10.5 `CONNECT tunnel failed, response 502` 必须归类为「连不上」且不误判成缺凭据；S10.6 `submit-market.sh --dry-run` 必须**离线**完成（代理指向死端口仍返回 0）；S10.7 clone 失败时非零退出 + **回显 git 原始 stderr** + 归因为「连不上 GitHub」而不是「你没 fork」；S10.8 防回退（两个脚本都必须 source `contrib/lib.sh`，不得再回到裸 `ROOT="$PWD"`）；**S10.9/S10.10 git 静默挂起被超时杀掉（输出为空）时必须单独归因成「超时/连不上」，不得落到「见上方 git 输出」这个空兜底** |
 
 > **S9 守的是「connect 只是可选增强」这句承诺的另一半。**
 > 文档一直说「装了 connect 更好、不装也能用」，但「装了」和「装了且好用」是两回事：
@@ -122,6 +122,12 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 >
 > 两个脚本共用的逻辑（根路径解析、代理探测、超时包装、失败归因）已抽到 `contrib/lib.sh`——
 > **抽出来的唯一理由是让它可被测试**：留在脚本里就只能靠「跑一遍发布」来验。
+>
+> ⚠️ **S10 依赖「能起子进程」**。本机（Windows + 安全中心「命令安全」黑名单）出现过
+> `spawnSync bash` 整批返回 `EBUSY` 的情形（`reg.exe` 被拦时连 `bash` 都起不来）。
+> 这既不是通过也不是失败，因此套件启动时先探测一次：**探不通就把 S10 里需要执行 bash 的
+> 用例全部标 SKIP**（单独计数、不算 FAIL 也不算 PASS，并说明这是环境限制），CI（Linux）上
+> 照常真实执行。S10.8 是纯文本断言，不受影响。
 
 > **S7 是本插件最容易被误解、也最容易在重构中被改坏的地方**：一旦有人「顺手」把抓取也接管了，S7.2/S7.3 会立刻红。
 >
@@ -274,7 +280,7 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 | **综述清理的性能**（未闭合内部标记） | T14.1 / T14.2 | — | ✅ 离线 |
 | **上游给了非字符串 `synthesis.content`** | — | S3.7 / S3.8 | ✅ 离线（打桩） |
 | **provider id 被别的插件占用** | T14.5 / T14.6 | — | ✅ 离线 |
-| **维护者脚本**（发布 / 上架在本机跑得动） | — | S10.1–S10.8 | ✅ 离线（真实 bash/git + 死代理） |
+| **维护者脚本**（发布 / 上架在本机跑得动） | — | S10.1–S10.10 | ✅ 离线（真实 bash/git + 死代理 + 黑洞代理） |
 | **测什么永远不丢**（体系自检） | — | S8.1–S8.4 | ✅ 离线 |
 | **版本策略**（不锁上限、声明已验证版本） | T2.7–T2.10 | — | ✅ 离线 |
 | **仓库门面**（社区档案/模板格式） | — | G1.1–G6.2 | ✅ 离线 |
@@ -320,11 +326,12 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 **确实变红**——即这几条护栏不是恒真。该脚本用 **Python 而非 Node** 起子进程：
 本机环境下 Node 的 `spawnSync` 被拦（EBUSY），拿不到子进程输出。
 
-**v0.3.5 新增的护栏**（T6.11、T14.1–T14.6、S3.7、S3.8、S10.1–S10.8）由 `.local/mutate-v035.mjs`
-验证：注入 10 个「把修复回退」的变异体（`cleanSynthesis` 退回惰性正则 / 去掉全函数保护 /
+**v0.3.5 新增的护栏**（T6.11、T14.1–T14.6、S3.7、S3.8、S10.1–S10.10）由 `.local/mutate-v035.mjs`
+验证：注入 13 个「把修复回退」的变异体（`cleanSynthesis` 退回惰性正则 / 去掉全函数保护 /
 `?? ""` 回归 / 翻译错误时丢掉 `code` / `resolve_root` 回到 `$PWD` / `port_open` 只靠 `nc` /
 归因正则漏掉 `CONNECT tunnel failed` / `--dry-run` 不再提前返回 / 吞掉 clone 的 stderr /
-`submit-market.sh` 不再 source `lib.sh`），断言对应 check **确实变红**，并在结束时校验所有文件已逐字节还原。
+`submit-market.sh` 不再 source `lib.sh` / 两个脚本各自去掉「超时」归因分支 /
+`DEFAULT_BRANCH` 去掉 `|| true`），断言对应 check **确实变红**，并在结束时校验所有文件已逐字节还原。
 （本机 Node 的 `spawnSync` 已恢复可用，故这次用 Node 写。）
 
 > ⚠️ **这轮变异测试立刻抓出一条假护栏。** S10.1 最初写成「在当前目录下跑 `resolve_root`，
@@ -335,6 +342,16 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 > 跨平台可复现，且不绑定实现（换成 `sed` 之类的转换手段同样通过）。
 > 教训：**「在测试环境里跑一遍」不等于「复现了用户现场」**；环境差异（这里是 shell 传给
 > 子进程的 `$PWD` 形态）会让复现条件悄悄失效，而只有变异测试能把它照出来。
+
+> ⚠️ **S10.9 又顺手抓出一个「静默中止」。** 为了让这条用例不依赖本仓库的工作区状态
+> （`publish.sh` 有「工作区必须干净」的闸门），它在一个**临时副本**里跑脚本。副本是用
+> `git init` 现造的，因此没有 `refs/remotes/origin/HEAD` —— 于是 `publish.sh` 里那句
+> `DEFAULT_BRANCH="$(git symbolic-ref … | sed …)"` 在 `set -o pipefail` + `set -e` 之下
+> 返回非零，**整个脚本一声不响地中止**（退出码 1、零输出）。这正是该脚本声称要避免的
+> 「静默失败」，已改为 `|| true` + 回落 `main`。同类写法（读版本号、读 `origin` 推断
+> 账号）也一并改成「带话退出」。
+> 教训：**`set -e` + `$(管道)` 是静默中止的高发地** —— 只要管道里任何一环可能失败，
+> 就必须显式处理，否则用户只看到退出码。
 
 ---
 

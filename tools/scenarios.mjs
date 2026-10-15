@@ -28,6 +28,7 @@ const entryUrl = pathToFileURL(join(targetDir, "lib", "index.js")).href;
 
 let pass = 0;
 let fail = 0;
+const skipped = [];
 const failures = [];
 
 function check(id, label, condition, detail = "") {
@@ -39,6 +40,20 @@ function check(id, label, condition, detail = "") {
     fail += 1;
     failures.push(`${id} ${label}${detail !== "" ? ` (${detail})` : ""}`);
   }
+}
+
+/**
+ * 明确跳过一条用例：**既不算 PASS 也不算 FAIL**，而是把理由打印出来并单独计数。
+ *
+ * 为什么需要它：本机（Windows + 安全中心策略）出现过 `spawnSync bash` 整批返回
+ * `EBUSY` 的情况 —— 一旦某个程序进了「命令安全」黑名单，Node 起子进程就被统一拦掉。
+ * 此时靠执行 bash 来验证的用例（S10 组）既无法失败也无法通过，把它算成 FAIL
+ * 会误导「插件有缺陷」，算成 PASS 则是在掩护自己。所以如实标 SKIP。
+ * CI（Linux）上 spawn 正常，这组用例照常 FAIL/PASS，不受影响。
+ */
+function skip(id, label, reason) {
+  console.log(`  SKIP  ${id}  ${label}（${reason}）`);
+  skipped.push(`${id} ${label}（${reason}）`);
 }
 
 async function expectReject(fn) {
@@ -55,6 +70,23 @@ const { __internals } = mod;
 const callAgenticSearch = __internals.callAgenticSearch;
 
 console.log(`\n=== 用户场景 / 异常路径测试 ===\n目标: ${targetDir}\n`);
+
+// ───────────────────────── 环境能力探测（决定 S10 能否真跑） ─────────────────────────
+//
+// S10 组靠**真实执行 bash 脚本**来验证发布/上架工具的行为。但本机（Windows + 安全中心
+// 「命令安全」策略）一旦把某个程序放进黑名单，Node 的 `spawnSync`/`execFileSync` 就会
+// 整批返回 `EBUSY`（实测 `reg.exe` 被拦时，连 `spawnSync bash` 都拿不到子进程）。
+// 这时硬跑只会得到 `status=null`、空输出 —— 既不是通过也不是失败，先把能力探出来。
+const SPAWN_BLOCKED_REASON = "本机 Node 起子进程被安全策略拦成 EBUSY（进程黑名单所致），无法执行 bash";
+const canSpawn = (() => {
+  const probe = spawnSync("bash", ["-c", "true"], { encoding: "utf8", timeout: 20_000 });
+  return probe.error === undefined && probe.status === 0;
+})();
+if (!canSpawn) {
+  console.log(`\n⚠️ 子进程不可用：${SPAWN_BLOCKED_REASON}。`);
+  console.log(`   → 依赖执行 bash 的用例（S10 组）将一律标 SKIP，不算 PASS 也不算 FAIL。`);
+  console.log(`   → 这属于环境限制，不是插件缺陷；CI（Linux）上 spawn 正常，照常 FAIL/PASS。\n`);
+}
 
 // ───────────────────────── S1 空查询与畸形输入 ─────────────────────────
 
@@ -942,12 +974,30 @@ console.log("\nS7  接管范围：只接管搜索，不接管抓取（最易误�
       });
     const out = (r) => `${r.stdout ?? ""}${r.stderr ?? ""}`;
 
+    // 子进程被安全策略拦成 EBUSY 时，**凡是需要真实执行 bash 的用例一律不进场**，
+    // 改成 SKIP（上面已统一打印原因）。它们不是「执行后失败」，而是「无法执行」——
+    // 把后者算成 FAIL 等于谎报插件有缺陷。S10.8 是纯文本断言，不受影响、照常跑。
+    const SPAWN_DEPENDENT = [
+      ["S10.1", "MSYS 形态的 $PWD（/d/...）不得被原样输出"],
+      ["S10.2", "resolve_root 在真实仓库上的输出能被 node 的 require 解析"],
+      ["S10.3", "resolve_root 不产出 node 认不出的 MSYS 路径"],
+      ["S10.4", "端口探测不依赖 nc"],
+      ["S10.5", "CONNECT tunnel failed, response 502 归类为「连不上」"],
+      ["S10.6", "submit-market.sh --dry-run 离线完成"],
+      ["S10.7", "clone 失败 → 非零退出 + 回显原始 stderr + 归因「连不上」"],
+      ["S10.9", "git 静默挂起被超时杀掉 → 仍给出可操作归因"],
+      ["S10.10", "submit-market.sh 的 clone 静默挂起 → 归因超时/连不上"],
+    ];
+    if (!canSpawn) {
+      for (const [id, label] of SPAWN_DEPENDENT) skip(id, label, SPAWN_BLOCKED_REASON);
+    }
+
     // S10.1–S10.3 仓库根路径必须能被 node 认出来。
     //
     // 这是 publish.sh 的**第一步**（读 package.json 版本号），原先写成 `ROOT="$PWD"`：
     // Git Bash 下 `$PWD` 是 `/d/...`（MSYS）形态，node 的 `require()` 认不出，脚本
     // 一行有效输出都没有就崩掉 —— 也就是「发布脚本在本机一步都跑不动」。
-    {
+    if (canSpawn) {
       // ⚠️ 这条**必须打桩 cygpath 并直接注入 `$PWD`**，不能靠「在当前目录下跑一遍」：
       //    真实 MSYS 形态只在 Git Bash 里出现，而 node 的 spawnSync 传 cwd 给 bash 时
       //    `$PWD` 拿到的已经是 Windows 形态（`<盘符>:/...`）—— 于是原写法在任何平台上
@@ -965,8 +1015,8 @@ console.log("\nS7  接管范围：只接管搜索，不接管抓取（最易误�
         `实测 ${JSON.stringify(got)}`,
       );
     }
-    {
-      // 端到端补一刀：在真实仓库上，resolve_root 的输出必须真能被 node 的 require 解析。
+    // 端到端补一刀：在真实仓库上，resolve_root 的输出必须真能被 node 的 require 解析。
+    if (canSpawn) {
       const rootRes = runBash(targetDir, ". ./contrib/lib.sh; resolve_root");
       const root = (rootRes.stdout ?? "").trim();
       const requireRes = spawnSync("node", ["-p", `require(${JSON.stringify(`${root}/package.json`)}).version`], {
@@ -996,7 +1046,7 @@ console.log("\nS7  接管范围：只接管搜索，不接管抓取（最易误�
     // `command -v nc && nc -z ...` —— 缺 nc 时整段判断直接短路成「没有代理」。
     // 这里把 nc 覆盖成一个「必定失败」的函数（`command -v nc` 仍会命中它），
     // 于是只有真正不依赖 nc 的实现才能探到那个确实在监听的端口。
-    {
+    if (canSpawn) {
       const net = await import("node:net");
       const server = net.createServer();
       const port = await new Promise((res, rej) => {
@@ -1020,7 +1070,7 @@ console.log("\nS7  接管范围：只接管搜索，不接管抓取（最易误�
     // "failed to connect" 也不含 "could not resolve host"。早先的正则漏了它，
     // 于是落到「原因见上方输出」，恰好丢掉唯一有用的那条指引（去查网络，而不是
     // 去折腾 PAT）。同时两类必须**互斥**：网络问题不得被误判成凭据问题。
-    {
+    if (canSpawn) {
       const msg = "fatal: unable to access 'https://github.com/x/y.git/': CONNECT tunnel failed, response 502";
       const cls = runBash(
         targetDir,
@@ -1040,7 +1090,7 @@ console.log("\nS7  接管范围：只接管搜索，不接管抓取（最易误�
     //
     // 代理指向必然不通的端口：只要脚本仍尝试联网（clone），就一定会失败并返回
     // 非零 —— 它返回 0 即证明「dry-run 只在本地准备」这句说明属实。
-    {
+    if (canSpawn) {
       const r = runBash(targetDir, "bash ./contrib/submit-market.sh --dry-run", {
         DSH_GIT_PROXY: "http://127.0.0.1:1",
       });
@@ -1057,7 +1107,7 @@ console.log("\nS7  接管范围：只接管搜索，不接管抓取（最易误�
     //
     // 三个要求缺一不可：静默失败会让维护者以为是「没 fork」而去开 fork；
     // 吞掉 stderr 则连原因都看不到。
-    {
+    if (canSpawn) {
       const r = runBash(targetDir, "bash ./contrib/submit-market.sh", {
         DSH_GIT_PROXY: "http://127.0.0.1:1",
       });
@@ -1085,16 +1135,115 @@ console.log("\nS7  接管范围：只接管搜索，不接管抓取（最易误�
         `source lib.sh=${sourcesLib} 无裸 $PWD=${noRawPwd}`,
       );
     }
+    // S10.9 超时（被 timeout 杀掉、**输出为空**）必须被单独归因。
+    //
+    // 这条是实跑 `publish.sh --dry-run` 时发现的：直连 GitHub 时 `git push` 会静默
+    // 挂起（既不报错也不返回，**连一行输出都没有**），被超时杀掉后输出为空 —— 于是
+    // 「按输出文本归因」的逻辑落到「原因见上方 git 输出」，而上方一片空白。
+    //
+    // 复现方式刻意做成**确定性**的：起一个「接受连接但永不响应」的本地 TCP 服务当
+    // 代理（黑洞），git 会卡在等 CONNECT 响应上，再由 1 秒超时把它杀掉 → 退出码 124。
+    //
+    // 为什么在**临时副本**里跑：`publish.sh` 有「工作区必须干净」的闸门，直接在本仓库
+    // 跑会在读到「有未提交改动」时就退出、根本走不到推送那一步（而用例一旦依赖
+    // 「当前工作区是干净的」，在开发过程中就会无谓地红）。副本由当前工作副本复制 +
+    // `git init` 得到，因此既是最新代码、又天然是干净仓库，且不碰本仓库分毫。
+    if (canSpawn) {
+      const net = await import("node:net");
+      const blackhole = net.createServer(() => { /* 接受连接，但永不回数据 */ });
+      const port = await new Promise((res, rej) => {
+        blackhole.once("error", rej);
+        blackhole.listen(0, "127.0.0.1", () => res(blackhole.address().port));
+      });
+      const sandbox = mkdtempSync(join(tmpdir(), "pub-sandbox-"));
+      const repo = join(sandbox, "repo");
+      fs.cpSync(targetDir, repo, {
+        recursive: true,
+        filter: (src) => !/(^|[\\/])(\.git|\.local|node_modules|dist)([\\/]|$)/.test(src),
+      });
+      const gitIn = (...args) => spawnSync("git", ["-C", repo, ...args], { encoding: "utf8", timeout: 60_000 });
+      gitIn("init", "-q", "-b", "main");
+      gitIn("config", "user.name", "sandbox");
+      gitIn("config", "user.email", "sandbox@example.invalid");
+      gitIn("remote", "add", "origin", "https://github.com/arnen7000/DSH-Workbuddy-WebSearch.git");
+      gitIn("add", "-A");
+      gitIn("commit", "-q", "-m", "sandbox");
+      // 打桩 node：只回版本号、其余调用直接成功，从而跳过三套件，让这条用例保持秒级。
+      const stubNode = join(sandbox, "node");
+      writeFileSync(stubNode, '#!/usr/bin/env bash\nfor a in "$@"; do case "$a" in *package.json*) echo 9.9.9; exit 0 ;; esac; done\nexit 0\n');
+      try { fs.chmodSync(stubNode, 0o755); } catch {}
+      let r;
+      try {
+        r = spawnSync("bash", ["./contrib/publish.sh", "--dry-run"], {
+          cwd: repo,
+          encoding: "utf8",
+          timeout: 90_000,
+          env: {
+            ...process.env,
+            DSH_NODE: stubNode.replace(/\\/g, "/"),
+            DSH_GIT_PROXY: `http://127.0.0.1:${port}`,
+            DSH_GIT_TIMEOUT: "1",
+          },
+        });
+      } finally {
+        await new Promise((res) => blackhole.close(res));
+        // 清理必须是**尽力而为**：Windows 上删一个刚跑过 git 的临时仓库可能报 EBUSY
+        // （文件被短暂占用），而这与本用例要断言的东西无关 —— 让清理失败把整个套件
+        // 带崩，只会掩盖真正的结论。留下的临时目录在系统 temp 里，无害。
+        try {
+          rmSync(sandbox, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+        } catch { /* 尽力而为，见上 */ }
+      }
+      const text = out(r);
+      check(
+        "S10.9",
+        "git 静默挂起被超时杀掉（输出为空）→ 仍给出可操作归因，不落到「见上方 git 输出」",
+        r.status !== 0 && /连不上 GitHub/.test(text) && !/见上方 git 输出/.test(text),
+        `exit=${r.status} 输出末尾=${JSON.stringify(text.slice(-300))}`,
+      );
+    }
+
+    // S10.10 同一性质在 `submit-market.sh` 上也要成立。
+    //        两个脚本各有一套归因文案（一个面向 push、一个面向 clone/push），只修一个
+    //        是最容易漏的形态 —— 所以两条都要钉住。
+    if (canSpawn) {
+      const net = await import("node:net");
+      const blackhole = net.createServer(() => { /* 接受连接，但永不回数据 */ });
+      const port = await new Promise((res, rej) => {
+        blackhole.once("error", rej);
+        blackhole.listen(0, "127.0.0.1", () => res(blackhole.address().port));
+      });
+      let r;
+      try {
+        r = runBash(targetDir, "bash ./contrib/submit-market.sh", {
+          DSH_GIT_PROXY: `http://127.0.0.1:${port}`,
+          DSH_GIT_TIMEOUT: "1",
+        });
+      } finally {
+        await new Promise((res) => blackhole.close(res));
+      }
+      const text = out(r);
+      check(
+        "S10.10",
+        "submit-market.sh 的 clone 静默挂起被超时杀掉 → 归因为超时/连不上，不落到通用兜底",
+        r.status !== 0 && /连不上 GitHub/.test(text) && !/原因见上方 git 输出/.test(text),
+        `exit=${r.status} 输出末尾=${JSON.stringify(text.slice(-260))}`,
+      );
+    }
   }
 }
 
 // ───────────────────────── 汇总 ─────────────────────────
 
 console.log(`\n=== 汇总 ===`);
-console.log(`  PASS: ${pass}   FAIL: ${fail}`);
+console.log(`  PASS: ${pass}   FAIL: ${fail}${skipped.length > 0 ? `   SKIP: ${skipped.length}` : ""}`);
 if (fail > 0) {
   console.log(`\n失败项：`);
   for (const f of failures) console.log(`  - ${f}`);
+}
+if (skipped.length > 0) {
+  console.log(`\n跳过的用例（环境限制，非插件缺陷；CI 上会真实执行）：`);
+  for (const s of skipped) console.log(`  - ${s}`);
 }
 console.log("");
 process.exit(fail === 0 ? 0 : 1);
