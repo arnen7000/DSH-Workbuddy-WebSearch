@@ -42,12 +42,17 @@ jobs:
       - name: Scenario suite (异常路径 / 接管范围)
         # 全部离线可验（构造输入 / 打桩 fetch），无凭据也能完整跑。
         run: node tools/scenarios.mjs "$PWD"
+      - name: User journey suite (走宿主同款入口)
+        # 按用户真实使用顺序走一遍：加载 → 首次搜索 → 异常 → 中断 → 并发 → 未登录。
+        # 上游 fetch 全部打桩，不联网、不计费。
+        run: node tools/user-journey.mjs "$PWD"
       - name: Docs present (测试体系与规范审计不留空)
         run: |
           test -f TESTING.md || { echo "TESTING.md 缺失：测试体系文档必须随版本走"; exit 1; }
           test -f NORM-COMPLIANCE.md || { echo "NORM-COMPLIANCE.md 缺失：规范审计结论必须随版本走"; exit 1; }
           grep -q "tools/regression.mjs" TESTING.md || { echo "TESTING.md 未引用回归套件"; exit 1; }
           grep -q "tools/scenarios.mjs" TESTING.md || { echo "TESTING.md 未引用场景套件"; exit 1; }
+          grep -q "tools/user-journey.mjs" TESTING.md || { echo "TESTING.md 未引用旅程套件"; exit 1; }
       - name: GitHub metadata self-check (社区档案 / 模板 / 工作流加固)
         # 校验社区健康文件齐备、Issue Forms 结构合法、Dependabot 配置合法、
         # 工作流最小权限与关键步骤接线。占位符未替换只 WARN，不阻断。

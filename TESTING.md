@@ -11,13 +11,14 @@
 用户场景（场景地图）
       │  每条场景必须能落到一条可执行的 check 上
       ▼
-三层套件：
+四层套件：
   tools/regression.mjs         ← 正常路径（happy path）+ 契约，需「已安装的实体目录」
   tools/scenarios.mjs          ← 异常路径（用户真实会撞的坑）+ 接管范围 + 体系自检，全部离线可验
+  tools/user-journey.mjs       ← 用户旅程（走宿主同款入口，从装好到用起来），全部离线可验
   tools/check-github-meta.mjs  ← 仓库门面（社区档案 / 模板格式 / 工作流加固），仓库根即可跑
       │
       ▼
-CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
+CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑四层套件
       │
       ▼
 每次发版：走「发布回环」（第 4 节），把新增场景先写成 check，再改代码
@@ -46,7 +47,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 
 ---
 
-## 2. 三层套件的分工
+## 2. 四层套件的分工
 
 ### 2.1 `tools/regression.mjs` — 正常路径 + 契约（T1–T14；源态 / 安装态均 183 项）
 
@@ -133,7 +134,36 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑三层套件
 >
 > **S8 保护的是「体系化」这件事本身**：如果哪天有人删了 `TESTING.md`、或把套件从 CI 里摘掉，S8 会立刻红——防止「又回到每次重新推演」的状态。
 
-### 2.3 `tools/check-github-meta.mjs` — GitHub 元数据自检（G1–G9，40 项）
+### 2.3 `tools/user-journey.mjs` — 用户旅程（A–J，42 项）
+
+被测对象：**宿主加载插件的那条路**。前两层都在调「内部函数」，这一层改为
+`import()` 插件的 `apply`、构造一个只提供真实接缝的伪 `ctx`（`config` / `root` / `web.registerSearchProvider`），
+然后按用户的真实顺序走一遍。全部离线，上游 `fetch` 打桩，不产生任何计费。
+
+| 组 | 场景 | 关注点 |
+|---|---|---|
+| A | 安装后能否被宿主加载 | 注册成功、provider id 稳定、`available()` 不误报 |
+| B | 第一次搜索（最常见路径） | 结果结构、来源、`truncated` |
+| C | 用户输入不合法 | 空 query 不白花一次检索 |
+| D | 上游出问题 | 用户看到的错误是否可操作（500 / 断流 / 坏 JSON） |
+| D2 | 登录态过期 | **先续期再重试**；续期也被拒才报 `SESSION_DEAD` |
+| E | 上游协议违约 | 非字符串 `synthesis.content` 报协议错误，不是原生 `TypeError` |
+| F | 用户点停止 | 已中止的 signal 直接 `WEB_ABORTED`，不发请求 |
+| G | 并发与连续使用 | 多路并发不串流、同会话连续搜索无状态污染 |
+| H | 极端输入 | 10 万个未闭合标签 2 秒内完成（线性）、内部标记不进正文 |
+| I | 来源上限 | 超过上限时截断并置 `truncated=true` |
+| J | 用户没登录 | 无凭据时安全返回 `undefined`（不抛）；错误信息不泄露凭据、含可操作指引 |
+
+> **这一层最容易被跳过，也最容易漏真 bug。** 前两层全绿之后，用户第一步仍可能卡住
+> （provider id 撞车导致静默不激活、`CONFIGURED_UNAVAILABLE`、没登录只提示「不可用」）。
+>
+> 写这一层有两条纪律：
+> ① **期望以源码真实行为为准**——跑出 FAIL 时先判断是「测试期望写错」还是「实现有缺陷」，别条件反射改实现；
+> ② **模拟不出来的场景要诚实标注**。本机已登录 WorkBuddy，注入 env 屏蔽不掉真实凭据，
+> 因此「未登录」用代码预留的注入口子（`resolveCredentialForVariant({ candidates })`）替代，
+> 并在用例注释里写明这是替代路径，而不是伪造一个「通过」。
+
+### 2.4 `tools/check-github-meta.mjs` — GitHub 元数据自检（G1–G9，40 项）
 
 被测对象：**仓库根目录**。这一层不测插件运行时，而是测**仓库在 GitHub 上的"门面"是否齐备且格式合法**——
 缺文件只会掉勾，但 **Issue 表单格式错会让 GitHub 整份拒收**，所以要钉住。
@@ -285,6 +315,12 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 | **版本策略**（不锁上限、声明已验证版本） | T2.7–T2.10 | — | ✅ 离线 |
 | **仓库门面**（社区档案/模板格式） | — | G1.1–G6.2 | ✅ 离线 |
 | **发布面精简**（长文不外发） | — | G7.1–G7.3 | ✅ 离线 |
+| **从装好到用起来**（宿主同款入口） | U1–U15 | — | ✅ 离线（打桩 fetch） |
+| **登录态过期的真实处置**（续期 vs 重登） | U16b / U16b2 | U16c | ✅ 离线（打桩） |
+| **多路并发 / 连续搜索不串流** | U22 / U23 | — | ✅ 离线 |
+| **极端输入不卡死宿主**（10 万未闭合标签） | U25 | U24 | ✅ 离线 |
+| **来源上限与截断标记** | U27 / U28 | — | ✅ 离线 |
+| **未登录时的安全返回与可操作提示** | — | U29 / U29a / U30 / U31 | ✅ 离线（注入口子） |
 
 ---
 
@@ -310,7 +346,7 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 
 1. **版本一致性闸门** —— Release tag（去掉 `v`）必须等于 `package.json` 的 `version`，否则直接拒绝发布。防的是「tag 写 0.4.0、实际发出去 0.3.9」这类不可逆错误；
 2. **发布前跑三套检查** —— `regression.mjs` / `scenarios.mjs` / `check-github-meta.mjs`，任一失败即不发布；
-3. **确认未注入长期 token 且 OIDC 通道可用** —— 断言 `NODE_AUTH_TOKEN` / `NPM_TOKEN` 都不是真实凭据（**但放过 `actions/setup-node` 自动写入的占位值 `XXXXX-XXXXX-XXXXX-XXXXX`**，见 §2.3 的说明），并确认 `ACTIONS_ID_TOKEN_REQUEST_URL` 存在，把 `id-token: write` 失效的故障点从 `npm publish` 的 `ENEEDAUTH` 前移到这一步；
+3. **确认未注入长期 token 且 OIDC 通道可用** —— 断言 `NODE_AUTH_TOKEN` / `NPM_TOKEN` 都不是真实凭据（**但放过 `actions/setup-node` 自动写入的占位值 `XXXXX-XXXXX-XXXXX-XXXXX`**，见 §2.4 的说明），并确认 `ACTIONS_ID_TOKEN_REQUEST_URL` 存在，把 `id-token: write` 失效的故障点从 `npm publish` 的 `ENEEDAUTH` 前移到这一步；
 4. `npm publish` —— 经 OIDC 换取短时发布令牌，自动生成 provenance 签名。
 
 > **不需要任何 GitHub Secret。** 这是刻意的：长期 token 会过期、会泄露、需要轮换，而 OIDC 每次由 GitHub 现签。

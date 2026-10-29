@@ -915,12 +915,14 @@ console.log("\nS7  接管范围：只接管搜索，不接管抓取（最易误�
   const testing = readDoc("TESTING.md");
   check("S8.1", "TESTING.md 存在（测试体系有落点）", testing !== undefined, testing ? "" : "缺失：下次修 bug 又要重新想测什么");
 
-  // S8.2 测试文档必须同时引用两层套件（只提一层说明覆盖有缺口）
+  // S8.2 测试文档必须引用每一层套件（只提一层说明覆盖有缺口）
+  const docSuites = ["tools/regression.mjs", "tools/scenarios.mjs", "tools/user-journey.mjs"];
+  const docMissing = docSuites.filter((s) => !(testing && testing.includes(s)));
   check(
     "S8.2",
-    "TESTING.md 同时引用 regression 与 scenarios 两层套件",
-    Boolean(testing && testing.includes("tools/regression.mjs") && testing.includes("tools/scenarios.mjs")),
-    testing ? "" : "（跳过：无 TESTING.md）",
+    "TESTING.md 引用了全部三层套件（regression / scenarios / user-journey）",
+    docMissing.length === 0,
+    testing ? (docMissing.length ? `缺少引用：${docMissing.join(", ")}` : "") : "（跳过：无 TESTING.md）",
   );
 
   // S8.3 规范审计文档必须存在（回答"是否符合 dsh 官方规范"要有存档，不能只在对话里）
@@ -934,11 +936,13 @@ console.log("\nS7  接管范围：只接管搜索，不接管抓取（最易误�
   const isRepoDir = fs.existsSync(join(targetDir, ".git")) || fs.existsSync(join(targetDir, ".github"));
   if (isRepoDir) {
     const ci = fs.existsSync(ciPath) ? fs.readFileSync(ciPath, "utf8") : "";
+    const ciSuites = ["scenarios.mjs", "user-journey.mjs"];
+    const ciMissing = ciSuites.filter((s) => !ci.includes(s));
     check(
       "S8.4",
-      "CI 已接线 scenarios 套件（否则用例形同虚设）",
-      ci.includes("scenarios.mjs"),
-      ci ? "" : "（CI 文件不存在）",
+      "CI 已接线 scenarios / user-journey 套件（否则用例形同虚设）",
+      ciMissing.length === 0,
+      ci ? (ciMissing.length ? `CI 未跑：${ciMissing.join(", ")}` : "") : "（CI 文件不存在）",
     );
   } else {
     check("S8.4", "非仓库目录（npm 包内无 .github/），跳过 CI 接线检查", true, "");
