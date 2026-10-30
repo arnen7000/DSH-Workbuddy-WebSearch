@@ -49,13 +49,15 @@ jobs:
       - name: Docs link / anchor self-check
         # L1 相对链接可达、L2 锚点存在、L3 §交叉引用命中真实章节、L4 README 目录完整。
         run: node tools/check-links.mjs "$PWD"
-      - name: Docs present (测试体系与规范审计不留空)
+      - name: Docs present (README 不得留空 / 发布物不含开发文档)
         run: |
-          test -f TESTING.md || { echo "TESTING.md 缺失：测试体系文档必须随版本走"; exit 1; }
-          test -f NORM-COMPLIANCE.md || { echo "NORM-COMPLIANCE.md 缺失：规范审计结论必须随版本走"; exit 1; }
-          grep -q "tools/regression.mjs" TESTING.md || { echo "TESTING.md 未引用回归套件"; exit 1; }
-          grep -q "tools/scenarios.mjs" TESTING.md || { echo "TESTING.md 未引用场景套件"; exit 1; }
-          grep -q "tools/user-journey.mjs" TESTING.md || { echo "TESTING.md 未引用旅程套件"; exit 1; }
+          test -f README.md || { echo "README.md 缺失：用户文档必须随版本走"; exit 1; }
+          grep -q "tools/regression.mjs" README.md || { echo "README.md 未引用回归套件"; exit 1; }
+          grep -q "tools/scenarios.mjs" README.md || { echo "README.md 未引用场景套件"; exit 1; }
+          grep -q "tools/user-journey.mjs" README.md || { echo "README.md 未引用旅程套件"; exit 1; }
+          for f in TESTING.md COMPATIBILITY.md NORM-COMPLIANCE.md DEVELOPING.md GITHUB-SETUP.md; do
+            if [ -e "$f" ]; then echo "$f 不应出现在仓库根（开发文档不对外分发）"; exit 1; fi
+          done
       - name: GitHub metadata self-check (社区档案 / 模板 / 工作流加固)
         # 校验社区健康文件齐备、Issue Forms 结构合法、Dependabot 配置合法、
         # 工作流最小权限与关键步骤接线。占位符未替换只 WARN，不阻断。

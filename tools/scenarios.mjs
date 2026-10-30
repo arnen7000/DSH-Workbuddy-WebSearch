@@ -911,23 +911,37 @@ console.log("\nS7  接管范围：只接管搜索，不接管抓取（最易误�
   const fs = await import("node:fs");
   const readDoc = (name) => (fs.existsSync(join(targetDir, name)) ? fs.readFileSync(join(targetDir, name), "utf8") : undefined);
 
-  // S8.1 测试体系文档必须存在（否则"场景→套件→用例"的映射无处可查，下次又要重新推演）
-  const testing = readDoc("TESTING.md");
-  check("S8.1", "TESTING.md 存在（测试体系有落点）", testing !== undefined, testing ? "" : "缺失：下次修 bug 又要重新想测什么");
+  // S8.1 用户文档必须存在（否则安装/配置/边界说明无处可查）
+  const readme = readDoc("README.md");
+  check("S8.1", "README.md 存在（用户文档有落点）", readme !== undefined, readme ? "" : "缺失：安装与边界说明无处可查");
 
-  // S8.2 测试文档必须引用每一层套件（只提一层说明覆盖有缺口）
-  const docSuites = ["tools/regression.mjs", "tools/scenarios.mjs", "tools/user-journey.mjs", "tools/check-links.mjs"];
-  const docMissing = docSuites.filter((s) => !(testing && testing.includes(s)));
+  // S8.2 用户文档必须引用每一层套件（只提一层说明覆盖有缺口）
+  const docSuites = [
+    "tools/regression.mjs",
+    "tools/scenarios.mjs",
+    "tools/user-journey.mjs",
+    "tools/check-links.mjs",
+    "tools/check-github-meta.mjs",
+  ];
+  const docMissing = docSuites.filter((s) => !(readme && readme.includes(s)));
   check(
     "S8.2",
-    "TESTING.md 引用了全部套件（regression / scenarios / user-journey / check-links）",
+    "README 引用了全部套件（regression / scenarios / user-journey / check-links / github-meta）",
     docMissing.length === 0,
-    testing ? (docMissing.length ? `缺少引用：${docMissing.join(", ")}` : "") : "（跳过：无 TESTING.md）",
+    readme ? (docMissing.length ? `缺少引用：${docMissing.join(", ")}` : "") : "（跳过：无 README.md）",
   );
 
-  // S8.3 规范审计文档必须存在（回答"是否符合 dsh 官方规范"要有存档，不能只在对话里）
-  const norm = readDoc("NORM-COMPLIANCE.md");
-  check("S8.3", "NORM-COMPLIANCE.md 存在（规范审计有存档）", norm !== undefined, norm ? "" : "缺失：规范的结论会随对话蒸发");
+  // S8.3 开发文档不得回流到仓库根。
+  //      用户要求对外仓库保持简洁（只要用户需要的安装/配置/边界说明），
+  //      测试体系、兼容性矩阵、规范审计、联调环境、上架流程一律留在本地。
+  const DEV_DOCS = ["TESTING.md", "COMPATIBILITY.md", "NORM-COMPLIANCE.md", "DEVELOPING.md", "GITHUB-SETUP.md"];
+  const leaked = DEV_DOCS.filter((name) => fs.existsSync(join(targetDir, name)));
+  check(
+    "S8.3",
+    "仓库根不含开发文档（开发心得不对外分发）",
+    leaked.length === 0,
+    leaked.length ? `不应存在：${leaked.join(", ")}` : "",
+  );
 
   // S8.4 本套件必须已被 CI 接线（写了用例却没人跑 = 等于没写）。
   //      注意：npm 包内不含 .github/，所以对「解包后的发布物」跳过该检查——
@@ -936,11 +950,11 @@ console.log("\nS7  接管范围：只接管搜索，不接管抓取（最易误�
   const isRepoDir = fs.existsSync(join(targetDir, ".git")) || fs.existsSync(join(targetDir, ".github"));
   if (isRepoDir) {
     const ci = fs.existsSync(ciPath) ? fs.readFileSync(ciPath, "utf8") : "";
-    const ciSuites = ["scenarios.mjs", "user-journey.mjs", "check-links.mjs"];
+    const ciSuites = ["scenarios.mjs", "user-journey.mjs", "check-links.mjs", "check-github-meta.mjs"];
     const ciMissing = ciSuites.filter((s) => !ci.includes(s));
     check(
       "S8.4",
-      "CI 已接线 scenarios / user-journey / check-links 套件（否则用例形同虚设）",
+      "CI 已接线 scenarios / user-journey / check-links / github-meta 套件（否则用例形同虚设）",
       ciMissing.length === 0,
       ci ? (ciMissing.length ? `CI 未跑：${ciMissing.join(", ")}` : "") : "（CI 文件不存在）",
     );

@@ -5,7 +5,7 @@ name: publish
 # 用 OIDC 可信发布（Trusted Publishing）：不依赖任何长期有效的 npm token，
 # 发布物自动附带 provenance 签名 —— 任何人都能验证「这个包确实由本仓库的这个
 # 工作流、从这个提交构建」。前提是在 npmjs.com 的包设置里把本仓库登记为
-# Trusted Publisher（见 GITHUB-SETUP.md）。
+# Trusted Publisher（在 npmjs.com 的包设置里把本仓库登记为可信发布者）。
 on:
   release:
     types: [published]

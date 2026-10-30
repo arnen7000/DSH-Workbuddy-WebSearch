@@ -1,8 +1,8 @@
 {
   "name": "dsh-workbuddy-websearch",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "将 WorkBuddy 桌面 App 的网络搜索接入 DeepSeek Harness 的 web_search 工具（零配置、零硬依赖）",
-  "versionNote": "0.3.6：让「最低 dsh 版本」从一句声明变成真正会被执行的闸门。此前只在 package.json 的 dsh.compatibility 里写了 >=0.1.5-rc.2，而 dsh 从不读这个字段——兼容判定 evaluatePluginCompatibility 只认 engines.dsh，以及 @deepseek-ai/dsh* 的 peer 区间；实测把运行时版本伪装成 0.1.4 依然放行，等于对过低的 dsh 完全不设防，用户只会看到「搜不出来」却查不到原因。现补上 engines.dsh 声明 >=0.1.5-rc.2：dsh 0.2.2 起安装器会据此拒绝过低版本，并直接打印 dsh plugin allow-version --accept-risk 补救命令；区间不带任何上界，所以 1.x / 2.x 照样能装。需要说明的是该字段是 0.2.2-alpha.2 才引入的，0.1.x / 0.2.0 / 0.2.1 的 dsh-app-boot 里它一次都不出现，那些版本上它仍只是一条声明——这不是缺陷，老版本本来就能跑。同时把测试体系从三层扩到四层并全部接进发布闸门：新增用户旅程套件 tools/user-journey.mjs（走宿主同款入口，A–J 十组共 42 项，全程打桩不联网、不计费），把原本只存在于维护者本机的文档链接检查收进 tools/check-links.mjs 并接入 CI，publish.yml 与 G5.2/G5.3 从只认三套改为认全部套件，S8.2/S8.4 扩到覆盖新套件，并新增 S8.5/S8.6 钉住 engines.dsh 与 dsh.compatibility.dsh 必须同值且不得设上界。四层套件的变异测试均已通过（旅程套件注入 4 个回退变异体，全部被抓）。本版运行时逻辑一行未改。",
+  "versionNote": "0.3.7：精简仓库与发布物。测试体系、兼容性矩阵、规范审计、开发环境、上架流程这五份开发文档不再随仓库和 npm 包分发，只保留用户需要的 README 与许可文件；README 里原先外链到这些文档的说明改为就地写清，变更记录压缩为一行要点。安装方式、配置项、运行时行为全部不变，本版运行时逻辑一行未改。",
   "author": "XingLang & WorkBuddy (小研)",
   "repository": {
     "type": "git",
@@ -66,9 +66,6 @@
     "lib",
     "cordis.patch.yml",
     "README.md",
-    "COMPATIBILITY.md",
-    "TESTING.md",
-    "NORM-COMPLIANCE.md",
     "CREDITS.md",
     "LICENSE"
   ],

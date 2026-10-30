@@ -5,10 +5,8 @@
 ## 最短上手路径
 
 1. 读 **[README.md](./README.md)** — 搞清插件做什么、边界在哪（尤其"只管搜索、不管抓取"）。
-2. 读 **[TESTING.md](./TESTING.md)** — **这是最重要的一份**。它给出场景地图与两层测试套件，
-   改代码前先看它，能避免"重新推演要测什么"。
-3. 读 **[DEVELOPING.md](./DEVELOPING.md)** — 本机联调环境（junction 挂载、`--dump-config` 核验）。
-4. 想动某个具体行为前，看 **[COMPATIBILITY.md](./COMPATIBILITY.md)** — 里面记着各 dsh 版本的实测差异与踩过的坑。
+2. 跑一遍 `tools/` 下的五套检查（见下），看清现有基线。
+3. 想动某个具体行为前，先读 `lib/` 里对应模块的注释 —— 关键决策与踩过的坑都标在那里。
 
 ## 开发流程（务必遵循）
 
@@ -18,6 +16,7 @@ node tools/regression.mjs   "<已安装插件目录>"   # T1–T14 正常路径 
 node tools/scenarios.mjs    "<插件目录>"         # S1–S10 异常路径 + 接管范围 + 体系自检
 node tools/user-journey.mjs "<插件目录>"         # A–J   用户旅程（走宿主同款入口）
 node tools/check-links.mjs  "$PWD"               # L1–L4 文档链接 / 锚点 / 交叉引用
+node tools/check-github-meta.mjs "$PWD"          # G1–G9 仓库元信息与「不夹带本机信息」
 
 # 2. 改代码前：先加一条会在旧代码上 FAIL 的 check（复现问题）
 #    —— 正常路径放 regression.mjs，异常路径放 scenarios.mjs，
@@ -35,8 +34,8 @@ node tools/check-links.mjs  "$PWD"               # L1–L4 文档链接 / 锚点
 - 一个 PR 只做一件事。**修 bug 的 PR 请附上复现步骤**，最好带一条新增的 check。
 - 提交信息用祈使句，说明"做了什么"与"为什么"，例如：
   `fix: 空查询不再误发云端（S1.2）`。
-- **必须**保证两层套件全绿；CI 会在 push/PR 上自动跑。
-- 改了对外行为 → 同步更新 `README.md` / `COMPATIBILITY.md`；改了测试体系 → 同步 `TESTING.md`。
+- **必须**保证五套检查全绿；CI 会在 push/PR 上自动跑。
+- 改了对外行为 → 同步更新 `README.md`。
 - 改了行为就要 **bump `package.json` 的 `version`** 并在 `versionNote` 里写一行变更摘要。
 
 ## 不能碰的红线
@@ -46,7 +45,7 @@ node tools/check-links.mjs  "$PWD"               # L1–L4 文档链接 / 锚点
 - **不要**移除 `cordis.patch.yml` 里复述的 `fetchProvider: http`（`S7.3` 会拦）——
   dsh 的 patch 是整行替换而非合并，删了会静默丢字段。
 - **不要**为"看起来更符合规范"而给 `@deepseek-ai/dsh*` 加 `peerDependencies`——
-  官方兼容性校验只认该命名空间，不声明才是永不被拒装的最稳选择（详见 `NORM-COMPLIANCE.md`）。
+  官方兼容性校验只认该命名空间，不声明才是永不被拒装的最稳选择。
 
 ## 报告 Bug / 提需求
 

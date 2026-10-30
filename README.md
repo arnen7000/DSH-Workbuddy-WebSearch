@@ -63,7 +63,7 @@ dsh plugin --profile web add dsh-workbuddy-websearch
 > 而 `@latest` 标签也绕不过它。想要立刻用上最新版就显式指定：
 >
 > ```bash
-> dsh plugin --profile web add dsh-workbuddy-websearch@0.3.6
+> dsh plugin --profile web add dsh-workbuddy-websearch@0.3.7
 > ```
 >
 > DSH 插件市场**自带**这个问题的处理（安装前先把目标固定到注册表的最新版），
@@ -95,15 +95,20 @@ dsh --profile web --dump-config | grep -i "workbuddy-websearch\|searchProvider"
 
 ```bash
 dsh plugin --profile web add dsh-workbuddy-websearch@latest   # 升到最新版
-dsh plugin --profile web add dsh-workbuddy-websearch@0.3.6    # 或固定到某一版
+dsh plugin --profile web add dsh-workbuddy-websearch@0.3.7    # 或固定到某一版
 ```
 
 ### 遇到问题
 
-**`add` 报错、或核验不通过**时，见
-[DEVELOPING.md → 安装排障](./DEVELOPING.md#安装排障在一个全新-dsh-环境上踩到的两个坑)：
-那里覆盖两个已知坑（pnpm 不落地 `link:` 依赖、`add` 的「半状态」陷阱）、
-配套的修复脚本 `tools/ensure-installed.mjs`，以及「开发态 vs 发布态」的说明。
+**`add` 报错、或核验不通过**时，先试一遍幂等修复脚本（可反复跑，不会重复安装）：
+
+```bash
+node tools/ensure-installed.mjs "<DSH_HOME>" web
+```
+
+最常见的两个原因：① pnpm 没把 `link:` 依赖真正落地到 `node_modules`；
+② 上一次 `add` 中途失败留下「半状态」（`dependencies` 已写、`node_modules` 不完整），
+此时先 `remove` 再 `add`。
 
 > **`dsh-workbuddy-connect` 是可选增强，不是前置。** 装了会更稳（复用其久经验证的凭据 store），
 > 不装也能完整工作。详见[适用范围](#适用范围)。
@@ -113,7 +118,6 @@ dsh plugin --profile web add dsh-workbuddy-websearch@0.3.6    # 或固定到某�
 > dsh 的 `ctx.web` 会按 id 去重 —— **同时装只会有一个生效**，另一个静默不激活
 > （日志里只有一行 `1 entry did not activate`）。撞上这个坑时，插件会直接告诉你
 > **怎么把占用者查出来、怎么卸**。
-> 详见 [COMPATIBILITY.md](./COMPATIBILITY.md) §7.1。
 
 > ⚠️ **装之前先确认 dsh 用的是哪个数据目录。** dsh 未设 `DSH_HOME` 时会回落到默认
 > 数据目录（`~/.dsh`）。若你平时是用某个包装脚本 / 固定数据目录启动 dsh 的，
@@ -130,8 +134,6 @@ dsh plugin --profile web add dsh-workbuddy-websearch@0.3.6    # 或固定到某�
 | **git** | **运行时不依赖** | 只在 `npm install` 装 git 依赖、或 `git clone` 做开发时需要 |
 | **原生构建工具链** | **不需要** | 零运行时依赖，没有需要编译的模块 |
 | **其他 dsh 插件** | **不需要** | 零硬依赖，独立工作 |
-
-> 逐项实测依据见 [COMPATIBILITY.md](./COMPATIBILITY.md) §5。
 
 ### 卸载
 
@@ -168,7 +170,7 @@ dsh headless "帮我搜一下最近的 XX 进展"
 > 注意 `headless` profile 的**默认模型**走 `deepseek-official`（需 DeepSeek API Key）；
 > 想让它也复用 WorkBuddy 登录态，需在该 profile 的 `cordis.patch.yml` 里把
 > `agent-default-model` 的 `provider` 改为 `workbuddy`。
-> 详见 [COMPATIBILITY.md](./COMPATIBILITY.md) §7。**模型配置与搜索插件是两件事，别混淆。**
+> **模型配置与搜索插件是两件事，别混淆。**
 
 ### 配置
 
@@ -191,7 +193,6 @@ dsh headless "帮我搜一下最近的 XX 进展"
 >
 > `auto`（默认）选**实际可用的那一版**，只装了一版的人无需任何配置；两版都可用时
 > 取国际版（保持 0.2.x 的额度归属），想固定用国内版就写 `region: cn`。
-> 详见 [COMPATIBILITY.md](./COMPATIBILITY.md) §4.2。
 
 > **自动探测顺序**：① 上面的环境变量 → ② 平台默认布局
 > （Windows 国内版 `%LOCALAPPDATA%\Programs\WorkBuddy\`；macOS `/Applications/*.app`）
@@ -206,7 +207,6 @@ dsh headless "帮我搜一下最近的 XX 进展"
 > ❗ 官方安装器允许把 App 装到**自选盘符或自定义目录**（macOS 上则是 `/Applications` 之外）。
 > 第 ③ ⑤ 步分别覆盖了这两种情形；万一仍找不到，请用环境变量显式指定。
 > 找不到时插件抛出的错误里已包含**可直接粘贴**的设置命令。
-> 详见 [COMPATIBILITY.md](./COMPATIBILITY.md) §4.1。
 
 ## 适用范围
 
@@ -254,9 +254,6 @@ dsh 从 **0.2.2** 起，安装器会读插件 `package.json` 里的 **`engines.d
 > **0.2.2 新增的 `ready?()` 为什么不实现**：宿主源码写的是「没有 `ready()` 就当作就绪」，
 > 它是可选的、供需要按模型路由判断凭据的 provider 使用。本插件的凭据来自本机 WorkBuddy，
 > 与模型路由无关，不实现即是正确语义。
->
-> 实现细节与护栏见 [DEVELOPING.md](./DEVELOPING.md) 的「版本策略」与
-> [NORM-COMPLIANCE.md](./NORM-COMPLIANCE.md) §2.5。
 
 **装了更新版本后搜索失效怎么办？** 按顺序排查：
 
@@ -268,8 +265,6 @@ dsh 从 **0.2.2** 起，安装器会读插件 `package.json` 里的 **`engines.d
 **`dsh-workbuddy-connect` 是可选增强，不是前置**：装了它 → 复用其久经验证的凭据 store
 （对罕见落盘形态与刷新时序兼容更完整）；**不装它 → 一切照常工作**，即便它加载失败或内部报错，
 也会**静默降级**，不会让搜索失效。
-
-完整兼容矩阵、实测依据与边界清单见 **[COMPATIBILITY.md](./COMPATIBILITY.md)**。
 
 ## 注意事项
 
@@ -311,17 +306,18 @@ dsh 从 **0.2.2** 起，安装器会读插件 `package.json` 里的 **`engines.d
 
 | 版本 | 要点 |
 |---|---|
-| **0.3.6** | **让「最低 dsh 版本」从声明变成真正会被执行的闸门**。此前只在 `dsh.compatibility` 里写了 `>=0.1.5-rc.2`，而 dsh 从不读该字段（兼容判定只认 `engines.dsh` 与 `@deepseek-ai/dsh*` 的 peer 区间）——实测把运行时伪装成 `0.1.4` 依然放行，等于对过低的 dsh 完全不设防。现补 `engines.dsh: ">=0.1.5-rc.2"`：dsh 0.2.2 起安装器据此拒装过低版本并直接给出 `allow-version --accept-risk` 补救；`>=` 无上界，1.x/2.x 照样能装。⚠️ 该字段 0.2.2-alpha.2 才引入，0.1.x/0.2.0/0.2.1 上它仍只是声明。另把测试体系从三层扩到**四层并全部接进发布闸门**：新增用户旅程套件（宿主同款入口、42 项、全程打桩）、文档链接检查从维护者本机收进 `tools/` 并接入 CI、`publish.yml` 与 G5 从只认三套改为认全部套件、新增 S8.5/S8.6 钉住两个字段同值且不设上界。**运行时逻辑一行未改** |
-| **0.3.5** | 修六个缺陷，其中两个直接卡住发布。**运行时相关的两个**：① 综述清理的**二次复杂度**——`cleanSynthesis` 用惰性正则匹配成对的内部标记，在大量未闭合开标签上是 O(n²)，10 万个要 88 秒，而它是同步的、会把 dsh 主进程整个卡死；改为按开标签切分的线性实现后同样输入 9ms 以内，顺带修掉带属性的开标签（`<selected-refs id=...>`）整段内容漏进综述的问题。② 上游给出**非字符串** `synthesis.content` 时抛原生 `TypeError`，宿主拿不到可分类的错误码；现归因为 `WB_SEARCH_UPSTREAM_ERROR`（`content` 缺失或为 `null` 仍是合法的 `EMPTY_RESULT`）。**维护链路的四个**：发布脚本取 `$PWD` 在 Git Bash 下是 MSYS 形态（`/d/...`），交给 `node` 直接 `MODULE_NOT_FOUND`；上架脚本因缺 `nc` 把「有代理」判成「无代理」并永久挂死；推送失败归因漏掉 `CONNECT tunnel failed, response 502`；`apply()` 翻译重复注册错误时把 `code` 丢在 `cause` 上。另补 T6.11、T14 组、S3.7/S3.8、S10 组用例，并用 10 个变异体证明新护栏非恒真 |
-| **0.3.4** | 修四个影响真实使用的缺陷：**中文正文被吞进 URL**（裸链漏排汉字主体，中文不用空格分词 → 必须把汉字当定界符）、**URL 收尾漏剥反引号与 markdown 强调记号**、**`truncated` 硬编码为 false**（前端因此不显示「来源列表已截断」）、**未知加密算法版本被误报成「未登录」**（WorkBuddy 升级加密算法后，明明登录着的用户会被告知去重新登录，而重登无效）。新增 38 条回归用例（T11/T12/T13）并用变异测试验证护栏非恒真 |
-| **0.3.3** | macOS 补齐 **Spotlight 发现链**（`mdfind` 按 bundle id 反查 → `plutil` 校验 → 可执行性检查 → 去重 → 多命中报歧义），对齐官方 connect 的定位策略；此前 macOS 只有 `/Applications/*.app` 一条默认路径，装在别处就发现不了。**Windows 行为完全不变** |
-| **0.3.2** | 新增 `screenshots.json` 与两张界面截图，供插件市场的详情页展示。**运行时行为与 0.3.1 相同** |
-| **0.3.1** | 发布链路改走 **npm 可信发布**（Trusted Publishing / OIDC）：在 GitHub 上发 Release 即自动发布，不再依赖长期 npm token，发布物附带 provenance 签名；修正 `package.json` 的仓库地址大小写（npm 要求与仓库完全一致）。**运行时行为与 0.3.0 相同** |
-| **0.3.0** | **区域绑定**：`region` 默认 `auto`（选实际可用的那一版），首次用到时绑定一版、整会话不切换；取消跨版静默回落（不再悄悄改用另一版扣费）；新增 **Windows 卸载注册表发现**，覆盖「两版装在同一目录」「装在自选盘符」 |
-| **0.2.6** | 文档按读者分层：安装拆成「快速开始」与「遇到问题」，开发态细节移入 DEVELOPING.md；新增本变更记录 |
-| **0.2.5** | 冲突提示改为通用表述（不再点名具体插件）；安装文档去本机化；修正测试降级判据（环境差异不再误判为缺陷） |
-| **0.2.4** | 修复三个真实缺陷：5.6+ 加密凭据解不开、Windows 缺 Electron 自动发现、connect 可能复用过期凭据 |
-| **0.2.3** | 版本策略改为「允许更新版本安装，只声明已验证到哪」；精简 CREDITS；补齐测试与社区档案文档 |
+| **0.3.7** | 精简仓库与发布物：五份开发文档（测试体系、兼容性矩阵、规范审计、联调环境、上架流程）不再随仓库与 npm 包分发，README 里原先外链到它们的说明改为就地写清。安装方式、配置项、运行时行为全部不变 |
+| **0.3.6** | 「最低 dsh 版本」从声明变成**真正会被执行**的闸门：补 `engines.dsh`，dsh 0.2.2 起据此拒装过低版本并给出补救命令。测试与发布闸门同步扩到五套件。**运行时逻辑一行未改** |
+| **0.3.5** | 修六个缺陷：综述清理的二次复杂度（同步执行会卡死 dsh 主进程）、上游非字符串响应的错误码归类，另四个在维护脚本里 |
+| **0.3.4** | 修四个影响真实使用的缺陷：中文正文被吞进 URL、URL 收尾漏剥反引号、`truncated` 恒为 false、未知加密算法被误报成「未登录」 |
+| **0.3.3** | macOS 补 **Spotlight 发现链**，装在 `/Applications` 之外也能找到；**Windows 行为不变** |
+| **0.3.2** | 新增市场详情页截图。**运行时行为与 0.3.1 相同** |
+| **0.3.1** | 发布改走 **npm 可信发布（OIDC）**，不再依赖长期 token，发布物带 provenance 签名；修正仓库地址大小写。**运行时行为与 0.3.0 相同** |
+| **0.3.0** | **区域绑定**：`region` 默认 `auto`，首次用到时绑定一版、整会话不切换，取消跨版静默回落；新增 **Windows 卸载注册表发现**，覆盖「两版装在同一目录」「装在自选盘符」 |
+| **0.2.6** | 文档按读者分层：安装拆成「快速开始」与「遇到问题」；新增本变更记录 |
+| **0.2.5** | 冲突提示改为通用表述（不点名具体插件）；安装文档去本机化；修正测试降级判据 |
+| **0.2.4** | 修三个真实缺陷：5.6+ 加密凭据解不开、Windows 缺 Electron 自动发现、connect 可能复用过期凭据 |
+| **0.2.3** | 版本策略改为「允许更新版本安装，只声明已验证到哪」；精简 CREDITS |
 | **0.2.2** | 新增异常路径测试套件；修两个健壮性缺陷；补「只管搜索、不管抓取」等用户场景说明 |
 | **0.2.1** | 转为**零硬依赖**：自带平台定位与凭据解密，不装 `dsh-workbuddy-connect` 也能完整工作；扩展到 macOS（实验性） |
 | **0.2.0** | 委托 connect 的凭据 store；支持国际版与加密凭据 |
@@ -348,15 +344,6 @@ Electron 二进制定位策略，都源自该项目的逆向与验证工作（MI
 - **参与本项目即表示你同意遵守 [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)。**
 
 完整的贡献流程、提交规范与不能碰的红线，见 **[CONTRIBUTING.md](./CONTRIBUTING.md)**。
-动手改代码前，建议按这个顺序读文档：
-
-| 文档 | 用途 |
-|---|---|
-| **[TESTING.md](./TESTING.md)** | 测试体系与发布回环：场景地图、四层套件（T1–T14 / S1–S10 / A–J / G1–G9 / L1–L4）、发布流程。**改代码前先读它。** |
-| **[DEVELOPING.md](./DEVELOPING.md)** | 本地联调环境（junction 挂载、`--dump-config` 核验）、实现要点与安装排障。 |
-| **[COMPATIBILITY.md](./COMPATIBILITY.md)** | 兼容矩阵与逐条实测依据。 |
-| **[NORM-COMPLIANCE.md](./NORM-COMPLIANCE.md)** | 与 dsh 官方规范的符合性审计（源码级证据），以及「哪些要改、哪些故意不改」。 |
-| **[GITHUB-SETUP.md](./GITHUB-SETUP.md)** | GitHub 侧要求对照：社区档案清单、工作流安全加固、仓库网页端设置清单。 |
 
 ### 维护者：改一处代码并发布（最短路径）
 
@@ -370,7 +357,7 @@ node tools/scenarios.mjs  "$PWD"        # 异常路径（断网/401/abort/凭据
 node tools/user-journey.mjs "$PWD"      # 用户旅程（走宿主同款入口）
 node tools/check-links.mjs "$PWD"       # 文档链接 / 锚点 / 交叉引用 / README 目录
 node tools/check-github-meta.mjs "$PWD" # 仓库元信息与「不夹带本机信息」红线
-# 各项的用例数与覆盖范围见 TESTING.md（这里不重复数字，避免两处各写一遍然后对不上）
+# 任一非零退出即不许发版；各套件自己会打印项数与失败明细
 
 # 3) 改版本号（package.json 的 version 与 versionNote）
 #    versionNote 是给人和给机器看的一句话全量说明，请一并更新。
@@ -407,8 +394,8 @@ git tag -a v<新版本号> -m "Release v<新版本号>" && git push origin v<新
 
 **想加一条回归用例**：在 `tools/regression.mjs` 里找 `T13`/`T14` 段照抄格式即可
 （`check("T14.1", 条件, "说明")`；异常路径则加到 `tools/scenarios.mjs`）。
-**请顺手做一次变异测试** —— 把修复点改回旧行为，确认新用例真的会失败；
-否则那条用例只是恒真的装饰（现成的变异脚本见 `TESTING.md` §6）。
+**顺手做一次变异测试** —— 把修复点改回旧行为，确认新用例真的会失败；
+否则那条用例只是恒真的装饰。
 
 ### 维护者：插件市场上架材料
 

@@ -26,11 +26,11 @@
 - [ ] `node tools/scenarios.mjs "<插件目录>"` 全绿（S1–S10）
 - [ ] `node tools/user-journey.mjs "<插件目录>"` 全绿（A–J）
 - [ ] `node tools/check-links.mjs "$PWD"` 全绿（L1–L4：相对链接 / 锚点 / §交叉引用 / README 目录）
+- [ ] `node tools/check-github-meta.mjs "$PWD"` 全绿（G1–G9）
 - [ ] 未把 `accessToken` 写进日志/错误信息/快照（红线，`S2.2` 会拦）
 - [ ] 未新增 `registerFetchProvider`（红线，`S7.2` 会拦）
 - [ ] `cordis.patch.yml` 仍复述 `fetchProvider: http`（红线，`S7.3` 会拦）
-- [ ] 改了对外行为 → 已同步 `README.md` / `COMPATIBILITY.md`
-- [ ] 改了测试体系 → 已同步 `TESTING.md`
+- [ ] 改了对外行为 → 已同步 `README.md`
 - [ ] 已 bump `package.json` 的 `version`，并在 `versionNote` 写了变更摘要
 
 ## 验证方式
@@ -42,6 +42,7 @@ node tools/regression.mjs   "<已安装插件目录>"
 node tools/scenarios.mjs    "<插件目录>"
 node tools/user-journey.mjs "<插件目录>"
 node tools/check-links.mjs  "$PWD"
+node tools/check-github-meta.mjs "$PWD"
 ```
 
 ## 风险 / 兼容性影响

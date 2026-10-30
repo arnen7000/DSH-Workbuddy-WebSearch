@@ -152,7 +152,7 @@ console.log(`\nG5  CI 工作流（安全加固 + 接线）`);
       ciMissing.length === 0,
       ciMissing.length ? `CI 未跑：${ciMissing.join(", ")}` : "",
     );
-    check("G5.4", "CI 已接线文档存在性检查（TESTING/NORM-COMPLIANCE）", ci.includes("Docs present"));
+    check("G5.4", "CI 已接线文档检查（README 不得留空、发布物不含开发文档）", ci.includes("Docs present"));
     check("G5.5", "CI 已接线本脚本（github-meta 自检）", ci.includes("check-github-meta.mjs"));
   }
 
@@ -206,7 +206,6 @@ console.log(`\nG6  占位符检查（未替换不判失败，但会挡住推送/
   const filesToScan = [
     "package.json",
     "README.md",
-    "DEVELOPING.md",
     ".github/ISSUE_TEMPLATE/config.yml",
     ".github/ISSUE_TEMPLATE/bug_report.yml",
     ".github/ISSUE_TEMPLATE/feature_request.yml",
@@ -374,7 +373,6 @@ console.log(`\nG9  时间信息分级检查（日级 ISO 日期只允许出现�
 {
   // 白名单：与"开发过程"无关的客观事实日期。新增一条必须在此登记理由。
   const ALLOWED_DATES = new Map([
-    ["2026-07-18", "WorkBuddy 鸿蒙版随 iOS/Android 上线的公开时间点（产品事实）"],
     ["2026-09-24", "搜索端点取证日期（技术事实，与开发环境无关）"],
   ]);
   // 只匹配"日级"日期；月级（2026-10）是允许的粒度，故不匹配。
