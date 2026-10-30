@@ -54,7 +54,7 @@ jobs:
           fi
           echo "版本一致：$PKG"
 
-      # 发布前跑全套检查（与 ci.yml 同款，四层套件 + 文档链接），任一失败即不发布。
+      # 发布前跑全套检查（与 ci.yml 同款：五套件），任一失败即不发布。
       - name: 发布前跑全套检查
         run: |
           node tools/regression.mjs "$PWD"
