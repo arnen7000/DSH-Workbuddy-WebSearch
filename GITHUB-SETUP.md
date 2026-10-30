@@ -225,6 +225,26 @@ tools/check-links.mjs                        # 文档链接 / 锚点 / 交叉引
 - ⚠️ 首次贡献者的 PR 会停在 `action_required`：**维护者批准后 workflow 才会跑**，这不是提交本身的问题；
   上游自带的守卫 check 会因此报「No checks ran on this pull request」。
 
+### 6.3 发布之后：各处什么时候才「看见」新版本
+
+同一个版本号，在不同地方出现的时刻**不一样**，别混为一谈：
+
+| 位置 | 数据从哪来 | 什么时候生效 |
+|---|---|---|
+| GitHub 仓库 / Release 页 | 我们自己的仓库 | **推送即生效** |
+| npm（`dsh plugin add` 装到的） | registry 的 `latest` | **Release 建好、publish 工作流跑完即生效**（约 1 分钟） |
+| 市场里**装到的**版本 | 卡片命令 `dsh plugin --profile web add <包名>`，**不带版本号** | **同上** —— 装的永远是 npm `latest` |
+| 市场卡片上**显示的版本号 / 下载量** | 上游每日构建的目录包 `dsh-plugin-catalog` | **次日 10:23（北京时间）** |
+| 市场详情页的截图 | 本仓库的 `screenshots.json` | 同上一行（下一次构建） |
+
+上游的节奏写在它的 `build-site.yml` 里：cron `23 2 * * *`（UTC，即北京时间 10:23），
+外加 push 到它 `main` 时触发。而 **push 触发的构建只部署、不重新探测**
+（源码注释原话：`Push builds deploy but do NOT probe`）—— 版本号、下载量这类需要探测的字段
+一天只刷新一次。所以发布完立刻去市场看、发现还是旧版本，是**正常的**，不代表没发成功。
+
+> 判定「到底发出去没有」只看两处：**npm 上的 `dist-tags.latest`**，和 **publish 工作流的绿勾**。
+> 市场卡片上显示的版本号**不是**判据。
+
 ---
 
 ## 7. 一键自检
