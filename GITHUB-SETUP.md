@@ -81,6 +81,7 @@ CODE_OF_CONDUCT.md                           # Contributor Covenant v2.1
 .github/ISSUE_TEMPLATE/config.yml            # 关闭空白 Issue，引导先读文档
 .github/dependabot.yml                       # 只盯 GitHub Actions
 tools/check-github-meta.mjs                  # GitHub 元数据自检（G1–G9，40 项）
+tools/check-links.mjs                        # 文档链接 / 锚点 / 交叉引用自检（L1–L4）
 ```
 
 **改动文件**
@@ -240,7 +241,7 @@ node tools/check-github-meta.mjs "$PWD"
 | G2 | PR 模板与两份 Issue 模板是否存在 |
 | G3 | Issue Forms 结构是否合法（`name`/`description`/`body`+`type`） |
 | G4 | Dependabot 结构合法，且只盯 `github-actions` |
-| G5 | CI 最小权限 + 关键步骤接线（含本脚本自身）；发布工作流的可信发布（OIDC）契约：`id-token: write`、Release 触发、官方 registry、不得注入长期 token、长期 token 闸门须放过 `actions/setup-node` 的占位值、显式确认 OIDC 通道可用、发布前接线三套检查 |
+| G5 | CI 最小权限 + 关键步骤接线（含本脚本自身）；发布工作流的可信发布（OIDC）契约：`id-token: write`、Release 触发、官方 registry、不得注入长期 token、长期 token 闸门须放过 `actions/setup-node` 的占位值、显式确认 OIDC 通道可用、发布前接线全部套件检查 |
 | G6 | 占位符提示（`<your-gh-user>` / `OWNER/REPO` / TODO 邮箱）——**只 WARN 不阻断** |
 | G7 | 发布面精简（`CREDITS.md` ≤ 6000 bytes、`.local/` 必须被忽略、完整版留在本地） |
 | G8 | **本机信息零泄露**——遍历全部文本文件，禁止本机路径 / 用户名 / 本机目录名 / 本机专属的 dsh 数据目录命名 / 本机专属包名（违规即 FAIL） |
@@ -258,7 +259,8 @@ node tools/check-github-meta.mjs "$PWD"
 #    https://github.com/arnen7000/DSH-Workbuddy-WebSearch/actions/workflows/ci.yml
 ```
 
-三套件里 `regression` / `scenarios` 由 CI 在 Linux 上跑（本机沙箱跑不全），`github-meta` 两边都跑。
+四层套件里 `regression` / `scenarios` / `user-journey` / `check-links` 由 CI 在 Linux 上跑
+（本机沙箱跑不全，尤其 `regression` 会被安全策略拦住），`github-meta` 两边都跑。
 **CI 未绿不得视为「已推送完成」。**
 
 ---
@@ -381,9 +383,10 @@ node tools/check-github-meta.mjs "$PWD"
 
 ```bash
 node tools/check-github-meta.mjs "$PWD"   # G1–G9，40 项
-node tools/regression.mjs "$PWD"          # T1–T13
-node tools/scenarios.mjs "$PWD"           # S1–S9
-node .local/check-links.mjs "$PWD"        # L1–L4（L4 = README 目录完整性，最易被漏）
+node tools/regression.mjs "$PWD"          # T1–T14
+node tools/scenarios.mjs "$PWD"           # S1–S10
+node tools/user-journey.mjs "$PWD"        # A–J（走宿主同款入口）
+node tools/check-links.mjs "$PWD"         # L1–L4（L4 = README 目录完整性，最易被漏）
 ```
 
 再同步 GitHub 网页端的 **Description**（与硬约束 1 同文）与 **Topics**（见第 6 节）。

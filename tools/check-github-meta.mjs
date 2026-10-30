@@ -142,7 +142,16 @@ console.log(`\nG5  CI 工作流（安全加固 + 接线）`);
   } else {
     check("G5.1", "ci.yml 声明最小权限 permissions", /^permissions:\s*$/m.test(ci) || /permissions:\s*contents:\s*read/.test(ci));
     check("G5.2", "CI 已接线 regression 套件", ci.includes("regression.mjs"));
-    check("G5.3", "CI 已接线 scenarios 套件", ci.includes("scenarios.mjs"));
+    // 本条一直担着「除 regression 之外的离线套件都要进 CI」这个契约。每新增一层套件就往这里加一项——
+    // 否则新层可以惄惄不进 CI，而自检仍然全绿。
+    const ciSuites = ["scenarios.mjs", "user-journey.mjs", "check-links.mjs"];
+    const ciMissing = ciSuites.filter((name) => !ci.includes(name));
+    check(
+      "G5.3",
+      "CI 已接线全部离线套件（scenarios / user-journey / check-links）",
+      ciMissing.length === 0,
+      ciMissing.length ? `CI 未跑：${ciMissing.join(", ")}` : "",
+    );
     check("G5.4", "CI 已接线文档存在性检查（TESTING/NORM-COMPLIANCE）", ci.includes("Docs present"));
     check("G5.5", "CI 已接线本脚本（github-meta 自检）", ci.includes("check-github-meta.mjs"));
   }
@@ -169,8 +178,15 @@ console.log(`\nG5  CI 工作流（安全加固 + 接线）`);
       "publish.yml 未注入长期 token（可信发布用 OIDC，不得回退成 token）",
       !/NODE_AUTH_TOKEN:\s*\$\{\{/.test(code) && !/secrets\.\s*(NPM_TOKEN|NODE_AUTH_TOKEN)/.test(code),
     );
-    check("G5.10", "publish.yml 发布前接线三套检查（失败即不发布）",
-      /regression\.mjs/.test(code) && /scenarios\.mjs/.test(code) && /check-github-meta\.mjs/.test(code));
+    // 发布闸门必须与 CI 同宽：只在 CI 里跑、不在 publish 里跑，等于「守了前门漏了后门」。
+    const publishSuites = ["regression.mjs", "scenarios.mjs", "user-journey.mjs", "check-links.mjs", "check-github-meta.mjs"];
+    const publishMissing = publishSuites.filter((name) => !code.includes(name));
+    check(
+      "G5.10",
+      "publish.yml 发布前接线全套检查（失败即不发布）",
+      publishMissing.length === 0,
+      publishMissing.length ? `发布前未跑：${publishMissing.join(", ")}` : "",
+    );
     // G5.11 —— 这条是被真事逼出来的：闸门最初写成「NODE_AUTH_TOKEN 非空即失败」，
     // 而 actions/setup-node 只要给了 registry-url，就会主动把该变量设成占位值
     // XXXXX-XXXXX-XXXXX-XXXXX，于是**每次发布都在这一步误报失败**（真实事故，白烧一轮）。

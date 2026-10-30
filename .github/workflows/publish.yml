@@ -54,11 +54,13 @@ jobs:
           fi
           echo "版本一致：$PKG"
 
-      # 发布前跑三套检查，任一失败即不发布。
-      - name: 发布前跑三套检查
+      # 发布前跑全套检查（与 ci.yml 同款，四层套件 + 文档链接），任一失败即不发布。
+      - name: 发布前跑全套检查
         run: |
           node tools/regression.mjs "$PWD"
           node tools/scenarios.mjs "$PWD"
+          node tools/user-journey.mjs "$PWD"
+          node tools/check-links.mjs "$PWD"
           node tools/check-github-meta.mjs "$PWD"
 
       # 可信发布不使用任何 token。这里显式确认环境里没有「真实」凭据，

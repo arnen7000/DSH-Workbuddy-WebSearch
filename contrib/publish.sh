@@ -81,12 +81,14 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
-# 2) 发布前跑三套检查（与 CI 同款），全绿才继续。
+# 2) 发布前跑全套检查（与 CI 同款），全绿才继续。
 echo "== 跑发布前检查 =="
 "$NODE" tools/regression.mjs "$ROOT"         >/dev/null
 "$NODE" tools/scenarios.mjs  "$ROOT"         >/dev/null
+"$NODE" tools/user-journey.mjs "$ROOT"       >/dev/null
+"$NODE" tools/check-links.mjs  "$ROOT"       >/dev/null
 "$NODE" tools/check-github-meta.mjs "$ROOT"  >/dev/null
-echo "✓ regression / scenarios / check-github-meta 全通过"
+echo "✓ regression / scenarios / user-journey / check-links / check-github-meta 全通过"
 echo
 
 # 3) 代理只作用于本次 git 调用，不落盘到 git config。

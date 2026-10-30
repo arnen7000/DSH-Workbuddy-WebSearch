@@ -16,21 +16,27 @@
 
 ### ⭐ 版本策略（重要）
 
-**本插件不锁版本上限。** dsh 或 WorkBuddy 发布更新版本后，**照样可装可用**——
-我们只声明"已验证到哪些版本"，把判断权留给用户。
+**本插件声明下界、不锁上限。** 低于 `0.1.5-rc.2` 的 dsh 装不上；dsh 或 WorkBuddy
+发布更新版本后，**照样可装可用**。
 
 - **已验证（端到端）**：dsh `0.1.5-rc.2` / `0.1.7-rc.1` / `0.2.0-rc.2`；
   WorkBuddy 桌面端国内版 + 国际版（明文与 `$wbEncrypted` 加密两条凭据路径，
   加密格式在实机 **5.6.2** 上端到端验证，见 附 D）。
-- **未验证但预期可用**：dsh `0.1.6-alpha.2`（接缝已核对，未端到端）、
-  dsh `> 0.2.0-rc.2`（接缝稳定）、WorkBuddy 桌面端更新版本。
-- **实现方式**：`package.json` 的 `dsh.compatibility`（**纯声明**，dsh 无任何代码读取它，
-  不参与强制校验）+ 本文档。**刻意不声明 `@deepseek-ai/dsh*` 的 `peerDependencies` 区间**——
-  那会主动引入"被拒装"风险（官方兼容性校验只认该命名空间）。
+- **接口核对通过、未端到端**：dsh `0.1.6-alpha.2`、`0.2.1-alpha.2`、`0.2.2-alpha.2`
+  （`WebSearchProvider` 在 0.1.5→0.2.2 之间只多了一个**可选**的 `ready?()`，
+  宿主源码写明「没有 `ready()` 就当作就绪」）。
+- **实现方式**：`engines.dsh: ">=0.1.5-rc.2"`（**会被执行**，自 dsh 0.2.2 起）
+  + `dsh.compatibility`（**纯声明**，dsh 无任何代码读取它）+ 本文档。
+  **刻意不声明 `@deepseek-ai/dsh*` 的 `peerDependencies` 区间**——
+  那会把 alpha 版也挡在门外，反而制造"装不上"。
 
 > 实测证据（用官方 `evaluatePluginCompatibility` 跑我们的 manifest）：
-> dsh `0.1.0` ~ `2.5.1` **全部放行**；若改声明 `>=0.1.5-rc.2 <0.2.0`，
-> 则 dsh `1.0.0` 会被**拒装**。详见 [NORM-COMPLIANCE.md](./NORM-COMPLIANCE.md) §2.5。
+> 只写 `dsh.compatibility` 时，dsh `0.1.4` 也会被**放行**（等于不设防）；
+> 写上 `engines.dsh` 后，dsh `0.1.4` 被**拒绝**并给出 `allow-version` 补救，
+> 而 `0.1.5-rc.2` / `0.2.2-alpha.2` / `1.0.0` 全部放行。
+> ⚠️ `engines.dsh` 是 **0.2.2-alpha.2** 才引入的：`0.1.x` / `0.2.0` / `0.2.1` 的
+> `dsh-app-boot` 里该字段出现次数为 **0**，那些版本不执行这条闸门。
+> 详见 [NORM-COMPLIANCE.md](./NORM-COMPLIANCE.md) §2.5。
 
 ---
 
@@ -686,7 +692,7 @@ if (configuredId !== undefined) {
 | 区域回落行为 | 0.2.x `resolveCredentialIndependently({region})` | ℹ️ 当时未给二进制会**回落到国内版明文凭据**。⛔ **0.3.0 起取消该回落**（§4.2）：如实报错，绝不静默改用另一版账号 |
 | 区域正确性 | 同上，给出二进制 | ✅ `variant=workbuddy-ai`、`source=desktop-encrypted`、`www.workbuddy.ai` |
 | 注册表发现 | `reg.exe` | ✅ 0.3.0 已实现（§4.1）。本机 `reg.exe` 被程序黑名单拦住 → **无法真机实测**，改用合成 `reg query` 输出在 T10.25–T10.32 覆盖 |
-| 回归套件 | `node tools/regression.mjs <dir>` | ✅ **源态 / 安装态均 174，全 PASS**（T1–T13；含 T9.15–T9.18、T10.13–T10.48、T11.1–T11.16、T11.3b/T11.3c、T12.1–T12.14、T13.1–T13.13） |
+| 回归套件 | `node tools/regression.mjs <dir>` | ✅ **源态 / 安装态均 174，全 PASS**（**该版本规模**；套件随版本增长，最新见 `TESTING.md`；T1–T13；含 T9.15–T9.18、T10.13–T10.48、T11.1–T11.16、T11.3b/T11.3c、T12.1–T12.14、T13.1–T13.13） |
 
 **修掉的两个真实缺陷**（都由上面的实测暴露，且都**不会**被自造密钥的单测发现）：
 

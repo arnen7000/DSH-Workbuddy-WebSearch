@@ -24,7 +24,7 @@ agentic 检索，返回**带引用来源的综述文本**。不需要任何 API 
   - [CLI](#cli)
   - [配置](#配置)
 - [适用范围](#适用范围)
-  - [版本策略：允许更新版本安装，只声明「已验证到哪」](#版本策略允许更新版本安装只声明已验证到哪)
+  - [版本策略：声明下界，不设上限](#版本策略声明下界不设上限)
 - [注意事项](#注意事项)
 - [变更记录](#变更记录)
 - [致谢](#致谢)
@@ -63,7 +63,7 @@ dsh plugin --profile web add dsh-workbuddy-websearch
 > 而 `@latest` 标签也绕不过它。想要立刻用上最新版就显式指定：
 >
 > ```bash
-> dsh plugin --profile web add dsh-workbuddy-websearch@0.3.4
+> dsh plugin --profile web add dsh-workbuddy-websearch@0.3.6
 > ```
 >
 > DSH 插件市场**自带**这个问题的处理（安装前先把目标固定到注册表的最新版），
@@ -95,7 +95,7 @@ dsh --profile web --dump-config | grep -i "workbuddy-websearch\|searchProvider"
 
 ```bash
 dsh plugin --profile web add dsh-workbuddy-websearch@latest   # 升到最新版
-dsh plugin --profile web add dsh-workbuddy-websearch@0.3.3    # 或固定到某一版
+dsh plugin --profile web add dsh-workbuddy-websearch@0.3.6    # 或固定到某一版
 ```
 
 ### 遇到问题
@@ -214,27 +214,47 @@ dsh headless "帮我搜一下最近的 XX 进展"
 |---|---|
 | **操作系统** | **Windows x64**（稳定）· **macOS**（🧪 实验性，未在真机验证） |
 | **CPU** | x64 / arm64（**32 位 Windows 不支持**：WorkBuddy 桌面端无 32 位构建） |
-| **dsh** | `>= 0.1.5-rc.2`（实测 0.1.5-rc.2 / 0.1.7-rc.1 / 0.2.0-rc.2 全通过） |
+| **dsh** | `>= 0.1.5-rc.2`（低于此版本**会被拒绝安装**，见下节） |
 | **Node** | `>= 20`（实测 v22 / v24） |
 | **WorkBuddy 桌面 App** | 已安装**并登录**（国内版 / 国际版任一） |
 | **dsh profile** | **任意**：`web` / `headless` / `tui` / `desktop` 均可 |
 
 不支持的平台：**32 位 Windows**、**Linux / WSL**、**鸿蒙**（WorkBuddy 鸿蒙版是手机 App，非桌面端）。
 
-### 版本策略：允许更新版本安装，只声明「已验证到哪」
+### 版本策略：声明下界，不设上限
 
-本插件**不锁版本上限** —— dsh 或 WorkBuddy 出了更新版本，**照样能装、能用**。
-我们只在文档里说清楚「验证过哪些版本」，把判断权留给你。
+dsh 从 **0.2.2** 起，安装器会读插件 `package.json` 里的 **`engines.dsh`**，不满足就**拒绝安装**
+并直接给出补救命令。本插件据此声明下界：
+
+```json
+"engines": { "node": ">=20", "dsh": ">=0.1.5-rc.2" }
+```
+
+- **低于 `0.1.5-rc.2` 明确不支持。** 那时 `ctx.web.registerSearchProvider` 这个接缝还没有，
+  装了也不会工作。与其让它静默不生效（用户只会看到「搜不出来」，却查不到原因），
+  不如在安装那一刻就说清楚。
+- **不设上限。** `>=` 没有上界，dsh 出 0.3 / 1.0 照样能装。
+- **更老的 dsh 不执行这条闸门。** `engines.dsh` 是 0.2.2-alpha.2 才引入的：0.1.x / 0.2.0 / 0.2.1
+  的安装器完全不读它，此时它只是一条声明。这不是缺陷 —— 那些版本本身也不需要被拦住
+  （它们都能跑），只是「低于下界就装不上」这句保证，从 0.2.2 起才成立。
+- **`dsh.compatibility` 只是给人看的。** dsh 从不读它 —— 兼容判定
+  （`evaluatePluginCompatibility`）只认 `engines.dsh`，以及 `@deepseek-ai/dsh*` 的 peer 区间。
+  本插件两者取同一个下界，并由 `S8.5` / `S8.6` 两条用例钉住，防止「文档说一套、执行另一套」。
 
 | 组件 | 已验证 | 是否阻止安装 |
 |---|---|---|
-| **dsh** | 0.1.5-rc.2 / 0.1.7-rc.1 / 0.2.0-rc.2 | ❌ **不阻止**（含未来的 1.x / 2.x） |
+| **dsh** | 实机搜索通过：0.1.5-rc.2 / 0.1.7-rc.1 / 0.2.0-rc.2<br>接口核对通过：0.2.1-alpha.2 / 0.2.2-alpha.2 | ⚠️ **`< 0.1.5-rc.2` 拒绝安装**（自 0.2.2 的安装器起生效；更老的安装器不读该字段），其余一律放行 |
 | **WorkBuddy 桌面端** | 国内版 + 国际版；明文与 `$wbEncrypted` 加密两种凭据格式均实测 | ❌ **不阻止** |
-| **Node** | v22.22.2 / v24.21.0 | ❌ 不阻止（仅 `engines` 提示） |
+| **Node** | v22.22.2 / v24.21.0 | ❌ 不阻止（仅 `engines.node` 提示） |
 
-> 之所以能做到「不锁上限」，是因为本插件只依赖一个极窄的接缝
-> （`ctx.web.registerSearchProvider`），且**刻意不声明** `@deepseek-ai/dsh*` 的
-> `peerDependencies` 版本区间 —— 那会主动引入「被拒装」的风险。
+> **为什么能放心不设上限**：本插件只依赖一个极窄的接缝（`ctx.web.registerSearchProvider`），
+> 且**刻意不声明** `@deepseek-ai/dsh*` 的 `peerDependencies` 版本区间 —— 那会把 alpha 版
+> 也挡在门外，反而制造「装不上」。
+>
+> **0.2.2 新增的 `ready?()` 为什么不实现**：宿主源码写的是「没有 `ready()` 就当作就绪」，
+> 它是可选的、供需要按模型路由判断凭据的 provider 使用。本插件的凭据来自本机 WorkBuddy，
+> 与模型路由无关，不实现即是正确语义。
+>
 > 实现细节与护栏见 [DEVELOPING.md](./DEVELOPING.md) 的「版本策略」与
 > [NORM-COMPLIANCE.md](./NORM-COMPLIANCE.md) §2.5。
 
@@ -291,6 +311,8 @@ dsh headless "帮我搜一下最近的 XX 进展"
 
 | 版本 | 要点 |
 |---|---|
+| **0.3.6** | **让「最低 dsh 版本」从声明变成真正会被执行的闸门**。此前只在 `dsh.compatibility` 里写了 `>=0.1.5-rc.2`，而 dsh 从不读该字段（兼容判定只认 `engines.dsh` 与 `@deepseek-ai/dsh*` 的 peer 区间）——实测把运行时伪装成 `0.1.4` 依然放行，等于对过低的 dsh 完全不设防。现补 `engines.dsh: ">=0.1.5-rc.2"`：dsh 0.2.2 起安装器据此拒装过低版本并直接给出 `allow-version --accept-risk` 补救；`>=` 无上界，1.x/2.x 照样能装。⚠️ 该字段 0.2.2-alpha.2 才引入，0.1.x/0.2.0/0.2.1 上它仍只是声明。另把测试体系从三层扩到**四层并全部接进发布闸门**：新增用户旅程套件（宿主同款入口、42 项、全程打桩）、文档链接检查从维护者本机收进 `tools/` 并接入 CI、`publish.yml` 与 G5 从只认三套改为认全部套件、新增 S8.5/S8.6 钉住两个字段同值且不设上界。**运行时逻辑一行未改** |
+| **0.3.5** | 修六个缺陷，其中两个直接卡住发布。**运行时相关的两个**：① 综述清理的**二次复杂度**——`cleanSynthesis` 用惰性正则匹配成对的内部标记，在大量未闭合开标签上是 O(n²)，10 万个要 88 秒，而它是同步的、会把 dsh 主进程整个卡死；改为按开标签切分的线性实现后同样输入 9ms 以内，顺带修掉带属性的开标签（`<selected-refs id=...>`）整段内容漏进综述的问题。② 上游给出**非字符串** `synthesis.content` 时抛原生 `TypeError`，宿主拿不到可分类的错误码；现归因为 `WB_SEARCH_UPSTREAM_ERROR`（`content` 缺失或为 `null` 仍是合法的 `EMPTY_RESULT`）。**维护链路的四个**：发布脚本取 `$PWD` 在 Git Bash 下是 MSYS 形态（`/d/...`），交给 `node` 直接 `MODULE_NOT_FOUND`；上架脚本因缺 `nc` 把「有代理」判成「无代理」并永久挂死；推送失败归因漏掉 `CONNECT tunnel failed, response 502`；`apply()` 翻译重复注册错误时把 `code` 丢在 `cause` 上。另补 T6.11、T14 组、S3.7/S3.8、S10 组用例，并用 10 个变异体证明新护栏非恒真 |
 | **0.3.4** | 修四个影响真实使用的缺陷：**中文正文被吞进 URL**（裸链漏排汉字主体，中文不用空格分词 → 必须把汉字当定界符）、**URL 收尾漏剥反引号与 markdown 强调记号**、**`truncated` 硬编码为 false**（前端因此不显示「来源列表已截断」）、**未知加密算法版本被误报成「未登录」**（WorkBuddy 升级加密算法后，明明登录着的用户会被告知去重新登录，而重登无效）。新增 38 条回归用例（T11/T12/T13）并用变异测试验证护栏非恒真 |
 | **0.3.3** | macOS 补齐 **Spotlight 发现链**（`mdfind` 按 bundle id 反查 → `plutil` 校验 → 可执行性检查 → 去重 → 多命中报歧义），对齐官方 connect 的定位策略；此前 macOS 只有 `/Applications/*.app` 一条默认路径，装在别处就发现不了。**Windows 行为完全不变** |
 | **0.3.2** | 新增 `screenshots.json` 与两张界面截图，供插件市场的详情页展示。**运行时行为与 0.3.1 相同** |
@@ -330,7 +352,7 @@ Electron 二进制定位策略，都源自该项目的逆向与验证工作（MI
 
 | 文档 | 用途 |
 |---|---|
-| **[TESTING.md](./TESTING.md)** | 测试体系与发布回环：场景地图、三层套件（T1–T13 / S1–S9 / G1–G9）、发布流程。**改代码前先读它。** |
+| **[TESTING.md](./TESTING.md)** | 测试体系与发布回环：场景地图、四层套件（T1–T14 / S1–S10 / A–J / G1–G9 / L1–L4）、发布流程。**改代码前先读它。** |
 | **[DEVELOPING.md](./DEVELOPING.md)** | 本地联调环境（junction 挂载、`--dump-config` 核验）、实现要点与安装排障。 |
 | **[COMPATIBILITY.md](./COMPATIBILITY.md)** | 兼容矩阵与逐条实测依据。 |
 | **[NORM-COMPLIANCE.md](./NORM-COMPLIANCE.md)** | 与 dsh 官方规范的符合性审计（源码级证据），以及「哪些要改、哪些故意不改」。 |
@@ -342,10 +364,13 @@ Electron 二进制定位策略，都源自该项目的逆向与验证工作（MI
 # 1) 改代码（lib/ 下三个模块：index=搜索流程、credentials=凭据、platform=平台定位）
 #    纯 ESM、无构建步骤，改完直接生效。
 
-# 2) 跑三套检查 —— 必须全绿才能发
-node tools/regression.mjs "$PWD"        # 174 项：契约、凭据、区域、平台、提取边界
-node tools/scenarios.mjs  "$PWD"        #  52 项：异常路径（断网/401/abort/凭据损坏/换行形态…）
-node tools/check-github-meta.mjs "$PWD" #  仓库元信息与「不夹带本机信息」红线
+# 2) 跑全套检查 —— 必须全绿才能发
+node tools/regression.mjs "$PWD"        # 契约、凭据、区域、平台、提取边界
+node tools/scenarios.mjs  "$PWD"        # 异常路径（断网/401/abort/凭据损坏/换行形态…）
+node tools/user-journey.mjs "$PWD"      # 用户旅程（走宿主同款入口）
+node tools/check-links.mjs "$PWD"       # 文档链接 / 锚点 / 交叉引用 / README 目录
+node tools/check-github-meta.mjs "$PWD" # 仓库元信息与「不夹带本机信息」红线
+# 各项的用例数与覆盖范围见 TESTING.md（这里不重复数字，避免两处各写一遍然后对不上）
 
 # 3) 改版本号（package.json 的 version 与 versionNote）
 #    versionNote 是给人和给机器看的一句话全量说明，请一并更新。
@@ -354,8 +379,8 @@ node tools/check-github-meta.mjs "$PWD" #  仓库元信息与「不夹带本机�
 git commit -am "fix: ..." && git push origin HEAD:main
 
 # 5) 打 tag 并**发布成 Release** —— 这一步才触发发布
-git tag -a v0.3.5 -m "Release v0.3.5" && git push origin v0.3.5
-#    然后 GitHub 上 Releases → Draft a new release → 选 tag v0.3.5 → Publish release
+git tag -a v<新版本号> -m "Release v<新版本号>" && git push origin v<新版本号>
+#    然后 GitHub 上 Releases → Draft a new release → 选该 tag → Publish release
 ```
 
 > ⚠️ **必须推到默认分支（main），不能只推 feature 分支。** 市场 CI 是从
@@ -367,15 +392,15 @@ git tag -a v0.3.5 -m "Release v0.3.5" && git push origin v0.3.5
 > 必须把 tag 发布成 **Release**，CI 才会跑。
 >
 > 本机可直接用 `bash contrib/publish.sh` 走完 4–5 步：它会自动注入代理、
-> 跑完三套检查、**把当前分支快进推送到默认分支**（分叉则明确报错，绝不强推）、
+> 跑完全套检查、**把当前分支快进推送到默认分支**（分叉则明确报错，绝不强推）、
 > 校验 tag 与 `package.json` 版本一致，并在装了 `gh` 时自动创建 Release。
 > 建议先 `bash contrib/publish.sh --dry-run` 看一眼会做什么。
 
 **为什么发布这么省事**：`.github/workflows/publish.yml` 用 **npm 可信发布（OIDC）**，
 不需要任何长期 npm token；工作流里还有一道**版本一致性闸门**，tag 与 `package.json`
 不一致会直接拒绝发布，避免「tag 写 0.4.0、实际发出去 0.3.9」这种不可逆错误。
-0.3.3 即以此链路发布，npm 上可查到 SLSA provenance 签名（来源仓库 = 本仓库、
-来源工作流 = `.github/workflows/publish.yml`、触发 = `refs/tags/v0.3.3`）。
+每次发布都会在 npm 上留下 SLSA provenance 签名（来源仓库 = 本仓库、
+来源工作流 = `.github/workflows/publish.yml`、触发 = 对应的 `refs/tags/v*`）。
 
 **用户怎么升级**：市场里点「升级」，或 `dsh plugin --profile web add dsh-workbuddy-websearch@<新版本号>`
 （见[快速开始](#快速开始)里关于 pnpm 24 小时冷静期的说明）。

@@ -11,14 +11,15 @@
 用户场景（场景地图）
       │  每条场景必须能落到一条可执行的 check 上
       ▼
-四层套件：
+五套件：
   tools/regression.mjs         ← 正常路径（happy path）+ 契约，需「已安装的实体目录」
   tools/scenarios.mjs          ← 异常路径（用户真实会撞的坑）+ 接管范围 + 体系自检，全部离线可验
   tools/user-journey.mjs       ← 用户旅程（走宿主同款入口，从装好到用起来），全部离线可验
   tools/check-github-meta.mjs  ← 仓库门面（社区档案 / 模板格式 / 工作流加固），仓库根即可跑
+  tools/check-links.mjs        ← 文档之间还连得上吗（相对链接 / 锚点 / §交叉引用 / README 目录）
       │
       ▼
-CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑四层套件
+CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑全部套件；publish.yml 发布前再跑一遍
       │
       ▼
 每次发版：走「发布回环」（第 4 节），把新增场景先写成 check，再改代码
@@ -47,7 +48,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑四层套件
 
 ---
 
-## 2. 四层套件的分工
+## 2. 四层套件的分工（落在五个脚本上）
 
 ### 2.1 `tools/regression.mjs` — 正常路径 + 契约（T1–T14；源态 / 安装态均 183 项）
 
@@ -78,7 +79,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑四层套件
 > 而 T9.5 的加解密往返用的是自造密钥，**完全测不出**这个问题。
 > 教训：凡涉及外部进程 / 私有绑定的调用，必须有源码级契约断言或真机实测。
 
-### 2.2 `tools/scenarios.mjs` — 异常路径 + 接管范围 + connect 降级 + 体系自检 + 维护者脚本（S1–S10，68 项）
+### 2.2 `tools/scenarios.mjs` — 异常路径 + 接管范围 + connect 降级 + 体系自检 + 维护者脚本（S1–S10，70 项）
 
 被测对象：**插件目录**（源码态即可，因为全部离线）。**不需要凭据、不需要网络**，靠构造输入和打桩 `fetch` 实现。
 
@@ -91,7 +92,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑四层套件
 | S5 | 平台路径分层 + 跨平台模拟 | S5.1 env 覆盖排在 `credentialPaths()` 首位；S5.2 `desktopAuthFiles()` **刻意不含** env 覆盖 |
 | S6 | 并发 / 10 万字符 / abort | S6.1 五路并发不串流；S6.3 abort 须在 1500ms 内返回 |
 | S7 | **接管范围** | S7.2 源码中**不存在** `registerFetchProvider`（只管搜索）；S7.3 patch 里复述了 `fetchProvider: http` |
-| S8 | **体系自检** | S8.1/S8.3 两份文档必须存在；S8.2 TESTING.md 必须同时引用 regression 与 scenarios 两个套件；S8.4 CI 必须已接线 |
+| S8 | **体系自检** | S8.1/S8.3 两份文档必须存在；S8.2 TESTING.md 必须引用全部套件；S8.4 CI 必须已接线；**S8.5 `engines.dsh` 必须存在且与 `dsh.compatibility.dsh` 同值（前者是 dsh 真正执行的闸门，后者只是文档）；S8.6 `engines.dsh` 不得设上限** |
 | S9 | **装了 connect 但 connect 坏了** | S9.1/S9.3 connect 返回过期/空 token 时**不得采信**（否则会拿死 token 去搜索并报 401，且不回落到自带路径）；S9.4/S9.5 connect 抛错或包 import 失败时静默降级；S9.6/S9.7 `forceRefresh` 必须走自带路径的显式 refresh，不复用 connect 的旧 token |
 | S10 | **维护者脚本**（发布 / 上架） | S10.1/S10.2/S10.3 `resolve_root` 的输出必须能被 node 的 `require` 解析，且不得是 MSYS 形态（`publish.sh` 的第一步就在这里崩过：Git Bash 的 `/d/...` 路径 node 认不出）；S10.4 端口探测**不得依赖 `nc`**（把 `nc` 覆盖成必定失败，仍要探到真实监听的端口）；S10.5 `CONNECT tunnel failed, response 502` 必须归类为「连不上」且不误判成缺凭据；S10.6 `submit-market.sh --dry-run` 必须**离线**完成（代理指向死端口仍返回 0）；S10.7 clone 失败时非零退出 + **回显 git 原始 stderr** + 归因为「连不上 GitHub」而不是「你没 fork」；S10.8 防回退（两个脚本都必须 source `contrib/lib.sh`，不得再回到裸 `ROOT="$PWD"`）；**S10.9/S10.10 git 静默挂起被超时杀掉（输出为空）时必须单独归因成「超时/连不上」，不得落到「见上方 git 输出」这个空兜底** |
 
@@ -174,7 +175,7 @@ CI（.github/workflows/ci.yml）在每次 push / PR 上自动跑四层套件
 | G2 | 模板文件 | PR 模板 + Bug/功能请求两份 Issue 模板 |
 | G3 | Issue Forms 结构合法 | 必须有 `name`/`description`/`body`，且每个 body 项含 `type` |
 | G4 | Dependabot 配置合法 | `version: 2` + `updates` + `package-ecosystem`/`directory`/`schedule`；且只盯 `github-actions` |
-| G5 | CI 加固与接线 | 顶层 `permissions` 最小权限；已接线各套件与文档检查；**发布工作流的可信发布（OIDC）契约**：`id-token: write`、由 Release 触发、指向官方 registry、不得注入长期 token、长期 token 闸门须放过 `actions/setup-node` 的占位值、显式确认 OIDC 通道可用、发布前接线三套检查 |
+| G5 | CI 加固与接线 | 顶层 `permissions` 最小权限；已接线各套件与文档检查；**发布工作流的可信发布（OIDC）契约**：`id-token: write`、由 Release 触发、指向官方 registry、不得注入长期 token、长期 token 闸门须放过 `actions/setup-node` 的占位值、显式确认 OIDC 通道可用、发布前接线全部套件检查 |
 | G6 | 占位符提示 | `<your-gh-user>` / `OWNER/REPO` / TODO 邮箱 —— **只 WARN，不阻断** |
 | G7 | **发布面精简** | `CREDITS.md` 保持简短（≤6000 bytes）；`.local/` 被 gitignore（本地长文不进仓库） |
 | G8 | **本机信息零泄露** | 遍历仓库所有文本文件，禁止出现本机路径 / 用户名 / 本机目录名（见下） |
@@ -246,6 +247,25 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 
 退出码约定：**只有 `FAIL` 才非零退出**；`WARN`（多为无凭据环境下的跳过）不影响退出码，所以 CI 恒通过、本地无网也不误报。
 
+### 2.5 `tools/check-links.mjs` — 文档链接 / 锚点 / 交叉引用（L1–L4，3 组）
+
+被测对象：**仓库里的 Markdown**。这一层不测代码，测的是**文档之间还连得上吗**——
+它抓的是「改了标题、忘了改目录」「某个小节编号早被删了、正文还引着它」这类只在读者眼里才暴露的问题。
+
+| 组 | 覆盖 | 判据 |
+|---|---|---|
+| L1 | 相对链接（`./X.md`、`#anchor`） | 目标文件存在、锚点在目标文件里真有对应标题（按 GitHub slug 规则） |
+| L2 | 带锚点的跨文件链接 | 同上，且大小写与 slug 归一化一致 |
+| L3 | 「§N.M」式章节交叉引用 | 目标文档里真有该编号的标题；无法自动判定归属的行单独列出待人工确认 |
+| L4 | README 的「目录」 | 覆盖全部 `##` / `###` 标题（Standard Readme 要求 TOC 完整） |
+
+```bash
+node tools/check-links.mjs "$PWD"
+```
+
+> 这一层曾经只放在维护者本地、不在仓库也不在 CI —— 也就是「写了检查但没人跑」。
+> 现在它与其余套件一起进 CI，并由 `G5.3`（CI 接线）与 `S8.2/S8.4`（体系自检）双向钉住。
+
 ---
 
 ## 3. 安装阶段的「手工核对清单」（无法自动化的少数几项）
@@ -281,7 +301,7 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 ⑦ 版本 + 打包 ── package.json 版本号 + versionNote（repository/homepage/bugs 必须与仓库名一致），
                npm pack → dist/*.tgz
 ⑧ 发布      ── 建 tag（v<版本>）+ GitHub Release → `publish.yml` 自动经 OIDC 发布到 npm
-               并在发布前重跑三套检查；tag 与 package.json 版本不一致会被工作流拒绝
+               并在发布前重跑全套检查；tag 与 package.json 版本不一致会被工作流拒绝
 ⑨ CI 兜底   ── push / PR 自动跑，任何人改坏都会红
 ```
 
@@ -311,8 +331,8 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 | **上游给了非字符串 `synthesis.content`** | — | S3.7 / S3.8 | ✅ 离线（打桩） |
 | **provider id 被别的插件占用** | T14.5 / T14.6 | — | ✅ 离线 |
 | **维护者脚本**（发布 / 上架在本机跑得动） | — | S10.1–S10.10 | ✅ 离线（真实 bash/git + 死代理 + 黑洞代理） |
-| **测什么永远不丢**（体系自检） | — | S8.1–S8.4 | ✅ 离线 |
-| **版本策略**（不锁上限、声明已验证版本） | T2.7–T2.10 | — | ✅ 离线 |
+| **测什么永远不丢**（体系自检） | — | S8.1–S8.6 | ✅ 离线 |
+| **版本策略**（下界被真实执行、不锁上限） | T2.7–T2.10 | S8.5 / S8.6 | ✅ 离线 |
 | **仓库门面**（社区档案/模板格式） | — | G1.1–G6.2 | ✅ 离线 |
 | **发布面精简**（长文不外发） | — | G7.1–G7.3 | ✅ 离线 |
 | **从装好到用起来**（宿主同款入口） | U1–U15 | — | ✅ 离线（打桩 fetch） |
@@ -321,6 +341,7 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 | **极端输入不卡死宿主**（10 万未闭合标签） | U25 | U24 | ✅ 离线 |
 | **来源上限与截断标记** | U27 / U28 | — | ✅ 离线 |
 | **未登录时的安全返回与可操作提示** | — | U29 / U29a / U30 / U31 | ✅ 离线（注入口子） |
+| **文档之间还连得上吗**（相对链接 / 锚点 / §交叉引用 / README 目录） | — | L1–L4 | ✅ 离线 |
 
 ---
 
@@ -345,7 +366,7 @@ node tools/scenarios.mjs   "<DSH_HOME>/profiles/web/node_modules/dsh-workbuddy-w
 `.github/workflows/publish.yml`（**Release 发布时**触发，也可手动触发；顶层 `permissions: contents: read` + `id-token: write`）：
 
 1. **版本一致性闸门** —— Release tag（去掉 `v`）必须等于 `package.json` 的 `version`，否则直接拒绝发布。防的是「tag 写 0.4.0、实际发出去 0.3.9」这类不可逆错误；
-2. **发布前跑三套检查** —— `regression.mjs` / `scenarios.mjs` / `check-github-meta.mjs`，任一失败即不发布；
+2. **发布前跑全套检查** —— `regression.mjs` / `scenarios.mjs` / `user-journey.mjs` / `check-links.mjs` / `check-github-meta.mjs`，任一失败即不发布；
 3. **确认未注入长期 token 且 OIDC 通道可用** —— 断言 `NODE_AUTH_TOKEN` / `NPM_TOKEN` 都不是真实凭据（**但放过 `actions/setup-node` 自动写入的占位值 `XXXXX-XXXXX-XXXXX-XXXXX`**，见 §2.4 的说明），并确认 `ACTIONS_ID_TOKEN_REQUEST_URL` 存在，把 `id-token: write` 失效的故障点从 `npm publish` 的 `ENEEDAUTH` 前移到这一步；
 4. `npm publish` —— 经 OIDC 换取短时发布令牌，自动生成 provenance 签名。
 

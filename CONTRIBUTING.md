@@ -14,11 +14,14 @@
 
 ```bash
 # 1. 先跑一遍现有测试，确认基线是绿的
-node tools/regression.mjs "<已安装插件目录>"   # T1–T13 正常路径 + 契约 + 提取边界
-node tools/scenarios.mjs  "<插件目录>"          # S1–S9 异常路径 + 接管范围 + 体系自检
+node tools/regression.mjs   "<已安装插件目录>"   # T1–T14 正常路径 + 契约 + 提取边界
+node tools/scenarios.mjs    "<插件目录>"         # S1–S10 异常路径 + 接管范围 + 体系自检
+node tools/user-journey.mjs "<插件目录>"         # A–J   用户旅程（走宿主同款入口）
+node tools/check-links.mjs  "$PWD"               # L1–L4 文档链接 / 锚点 / 交叉引用
 
 # 2. 改代码前：先加一条会在旧代码上 FAIL 的 check（复现问题）
-#    —— 正常路径放 regression.mjs，异常路径放 scenarios.mjs
+#    —— 正常路径放 regression.mjs，异常路径放 scenarios.mjs，
+#       用户可见的使用顺序放 user-journey.mjs
 
 # 3. 改代码，只改到新 check 转绿
 

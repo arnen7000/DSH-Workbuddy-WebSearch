@@ -46,6 +46,9 @@ jobs:
         # 按用户真实使用顺序走一遍：加载 → 首次搜索 → 异常 → 中断 → 并发 → 未登录。
         # 上游 fetch 全部打桩，不联网、不计费。
         run: node tools/user-journey.mjs "$PWD"
+      - name: Docs link / anchor self-check
+        # L1 相对链接可达、L2 锚点存在、L3 §交叉引用命中真实章节、L4 README 目录完整。
+        run: node tools/check-links.mjs "$PWD"
       - name: Docs present (测试体系与规范审计不留空)
         run: |
           test -f TESTING.md || { echo "TESTING.md 缺失：测试体系文档必须随版本走"; exit 1; }

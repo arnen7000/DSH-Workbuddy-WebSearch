@@ -165,8 +165,8 @@ if (Object.keys(peers).length === 0) return void 0;   // ← 没有 DSH peer = �
 "dsh": { "compatibility": { "dsh": ">=0.1.0-rc.5", "dshReleases": { "0.1.5-alpha.1": "compatible", ... } } }
 ```
 
-**关键事实：`evaluatePluginCompatibility` 完全不读 `dsh.compatibility`**——它只看 `peerDependencies`。
-全仓检索确认（dsh 0.2.0-rc.2 与 0.1.7-rc.1）：
+**关键事实一：`evaluatePluginCompatibility` 完全不读 `dsh.compatibility`**——该字段只是给人看的。
+全仓检索确认（dsh 0.1.7-rc.1 / 0.2.0-rc.2 / 0.2.1-alpha.2 / 0.2.2-alpha.2）：
 
 ```bash
 $ grep -rn "dsh?.compatibility\|dsh\.compatibility" --include=*.js node_modules/@deepseek-ai/
@@ -175,10 +175,26 @@ $ grep -rn "dshReleases" --include=*.js node_modules/@deepseek-ai/
 （无输出 → 同上）
 ```
 
-**这正是我们需要的性质**：它能**声明**"验证过哪些版本"，却**不会强制**任何东西。
-于是本项目采用它作为版本声明的载体：
+**关键事实二：真正的闸门是 `engines.dsh`，而且它是 0.2.2 才加的。**
+0.2.2-alpha.2 的 `unmetRequirements()` 是这样的（`dsh-app-boot`）：
+
+```js
+if (Object.hasOwn(engines, "dsh")) {
+  const range = engines.dsh;
+  return satisfies(runtimeVersion, range) ? {} : { "engines.dsh": range };   // ← 命中即早退
+}
+if (!Object.hasOwn(fields, "peerDependencies")) return {};                    // ← 只有没写 engines.dsh 才看 peer
+```
+
+即 **`engines.dsh` 存在时它独自决定，`peerDependencies` 被忽略**；`satisfies` 带
+`includePrerelease: true`，所以 alpha / rc 版本也参与区间比较。而 0.2.1-alpha.2 及更早的
+`dsh-app-boot` 里 `engines.dsh` **一次都没出现**（`grep -c` = 0）—— 那些版本不看这个字段。
+
+**这仍然是我们需要的性质**：下界能被真正执行（新版本 dsh 上），上限可以完全不设。
+于是本项目同时声明两者、取同一个下界，并让用例钉住它们不许漂移：
 
 ```json
+"engines": { "node": ">=20", "dsh": ">=0.1.5-rc.2" },
 "dsh": {
   "bundle": { "patch": "./cordis.patch.yml" },
   "compatibility": {
@@ -188,24 +204,24 @@ $ grep -rn "dshReleases" --include=*.js node_modules/@deepseek-ai/
 }
 ```
 
-- `dsh: ">=0.1.5-rc.2"` 是**宽松下界**——它表达"我们验证的起点"，而**不是**安装门槛；
+- `engines.dsh: ">=0.1.5-rc.2"` —— **会被执行的下界**（0.2.2+ 的安装器），且**没有上界**；
+- `dsh.compatibility.dsh` —— **同值的声明**，给人和工具看，dsh 不读；
 - `0.1.6-alpha.2` 标 `unknown`（接缝核对过，但未端到端），**如实标注**，不冒充已验证；
-- **更新版本（含未来 1.x / 2.x）照样安装**——因为该字段不参与校验。
+- 两条护栏：`S8.5` 断言两者同值（防止「声明一套、执行另一套」），`S8.6` 断言不得出现上界。
 
-**实测证据**（调用官方真实函数评估我们的 manifest）：
+**实测证据**（调用官方真实函数 `evaluatePluginCompatibility` 评估我们的 manifest）：
 
-| dsh 版本 | 我们的 manifest | 若改声明 `@deepseek-ai/dsh: ">=0.1.5-rc.2 <0.2.0"` |
+| dsh 运行时 | 只有 `dsh.compatibility`（0.3.5 之前） | 加 `engines.dsh: ">=0.1.5-rc.2"`（当前） |
 |---|---|---|
-| 0.1.0 | ✅ 放行 | ✅ 放行 |
+| 0.1.4（假想，低于下界） | ✅ 放行（**不设防**） | ❌ **拒绝**并给出 `dsh plugin allow-version … --accept-risk`（仅 0.2.2+ 的安装器会走到这里） |
 | 0.1.5-rc.2 | ✅ 放行 | ✅ 放行 |
-| 0.1.6-alpha.2 | ✅ 放行 | ✅ 放行 |
-| 0.1.7-rc.1 | ✅ 放行 | ✅ 放行 |
-| 0.2.0-rc.2 | ✅ 放行 | ✅ 放行 |
-| 1.0.0 | ✅ **放行** | ❌ **被拒装** |
-| 2.5.1 | ✅ **放行** | ❌ **被拒装** |
+| 0.1.7-rc.1 / 0.2.0-rc.2 | ✅ 放行 | ✅ 放行（这些版本的安装器不读 `engines.dsh`，等于无闸门——但它们本来就能跑） |
+| 0.2.1-alpha.2 | ✅ 放行 | ✅ 放行（同上：`grep -c engines.dsh` = 0） |
+| 0.2.2-alpha.2 | ✅ 放行 | ✅ 放行（**此处开始真的执行**） |
+| 1.0.0 / 2.5.1 | ✅ **放行** | ✅ **放行**（`>=` 无上界） |
 
-→ **这就是"不锁上限"的实现方式**：用非强制的 `dsh.compatibility` 声明，
-而**不**用会强制的 `peerDependencies`。
+→ **这就是"声明下界、不锁上限"的实现方式**：下界交给会被执行的 `engines.dsh`，
+上限靠**不写**上界；`peerDependencies` 里刻意不出现 `@deepseek-ai/dsh*`。
 
 > 豁免机制（profile 的 `compatibility.json` / `allow-version --accept-risk`）是给
 > "明知不兼容仍要装"的用户用的。我们**根本不触发**不兼容，故用不上。
@@ -221,7 +237,8 @@ $ grep -rn "dshReleases" --include=*.js node_modules/@deepseek-ai/
 | 3 | 导出 `./package.json` | 官方全有 | ✅ | 建议，已满足 |
 | 4 | `exports["."]` 对象形式 | 官方+多数三方用对象 | 字符串形式 | 🟡 无害（`resolve.exports` 两者都认；无 TS 时等价） |
 | 5 | 导出 `./cordis.patch.yml` | 官方全有，三方**多数没有** | 未导出 | 🟡 仅 **pkg 打包态**可能相关；node 直启**读不到** |
-| 6 | 声明 `@deepseek-ai/dsh*` peer | 官方全有；三方约半数有 | 未声明 DSH peer | ✅ **有意为之**：官方只校验 `@deepseek-ai/dsh*`，不声明=永不误拒 |
+| 6 | 声明 `@deepseek-ai/dsh*` peer | 官方全有；三方约半数有 | 未声明 DSH peer | ✅ **有意为之**：把 alpha 版挡在门外反而制造「装不上」；下界改由 `engines.dsh` 表达 |
+| 6b | 声明 `engines.dsh` | 0.2.2 起官方读取并强制执行 | ✅ `>=0.1.5-rc.2`（无上界） | ✅ **已满足**：低于下界拒装并给补救命令，高版本一律放行（§2.5） |
 | 7 | `dsh.compatibility` | 少数插件有 | ✅ **已采用** | ✅ 作为"已验证版本"声明；非强制字段，不拦任何版本（§2.5） |
 | 8 | `type: module` / 纯 ESM | 官方全有 | ✅ | 已满足 |
 | 9 | `engines.node` | 普遍声明 | ✅ `>=20` | 已满足 |
@@ -250,10 +267,12 @@ $ grep -rn "dshReleases" --include=*.js node_modules/@deepseek-ai/
 
 ### 明确不建议做
 - ❌ **不要**为了"符合规范"去加 `@deepseek-ai/dsh` 的 `peerDependencies`。官方只校验该命名空间，不声明才不会因为 range 写窄而被拒装；声明了反而**主动引入风险**（见 §2.5 实测对照表）。
-- ❌ **不要**把 `dsh.compatibility` 的 `dsh` 写成有上界的区间（如 `>=0.1.5 <0.2.0`）。它本身不强制，但写成上界会误导读者以为"超版不能用"，与本项目"允许更新版本安装"的策略相悖。
+- ❌ **不要**把 `engines.dsh` 或 `dsh.compatibility.dsh` 写成有上界的区间（如 `>=0.1.5 <0.2.0`）。前者会真的把升级后的用户挡在门外（且只能靠 `allow-version --accept-risk` 自救），后者会误导读者以为"超版不能用"。`S8.6` 已把这条钉住。
+- ❌ **不要**只改 `dsh.compatibility` 而不改 `engines.dsh`（或反过来）——两者不同值就说明「文档」与「执行」已经脱节，`S8.5` 会立刻变红。
 
 ### 已做（v0.2.3）
 - ✅ `dsh.compatibility` 声明已验证版本（宽松下界 + `dshReleases` 清单），作为版本策略的载体。
+- ✅ `engines.dsh: ">=0.1.5-rc.2"`（v0.3.6 起）：让下界从「声明」变成「被执行」——低于它的 dsh 在 0.2.2+ 的安装器上会被拒绝，并直接给出补救命令。
 
 ### 可选（上架市场时再做）
 - 补 `dshhub` 元数据（`displayName` / `summary` / `categories` / `capabilities`），参考 `dsh-cost-meter`。

@@ -214,14 +214,28 @@ node "<本插件目录>/tools/ensure-installed.mjs" "<你的 DSH_HOME>" web
 
 ## 版本策略（改版本相关代码前必读）
 
-**本插件不锁版本上限**——dsh / WorkBuddy 出更新版本照样能装。实现方式：
+**本插件声明下界、不锁上限**——低于下界的版本装不上，dsh / WorkBuddy 出更新版本照样能装。实现方式：
 
-- `package.json` 的 `dsh.compatibility` 只做**声明**（dsh 无任何代码读取它，不参与强制校验）；
-- **刻意不声明** `@deepseek-ai/dsh*` 的 `peerDependencies` 区间——官方兼容性校验只认该命名空间，
-  一旦声明且 range 写窄，**更新版本会被拒装**（实测：声明 `>=0.1.5-rc.2 <0.2.0` 会让 dsh `1.0.0` 被拒）。
+- `package.json` 的 **`engines.dsh`** 是**唯一会被执行的闸门**（dsh **0.2.2** 起生效：
+  `unmetRequirements()` 里 `engines.dsh` 命中即早退，`peerDependencies` 被忽略）；
+- `package.json` 的 `dsh.compatibility` 只做**声明**（dsh 无任何代码读取它），两者必须同值；
+- **刻意不声明** `@deepseek-ai/dsh*` 的 `peerDependencies` 区间——那会把 alpha 版挡在门外，
+  反而制造「装不上」。
 
-`tools/regression.mjs` 的 **T2.7–T2.10** 是护栏：会把上界区间、caret 区间、任何 `@deepseek-ai/dsh*`
-peer 声明全部拦下。**别绕过它。** 详见 [NORM-COMPLIANCE.md](./NORM-COMPLIANCE.md) §2.5 与 [README](./README.md) 的「版本策略」。
+> ⚠️ **版本事实（别记错）**：`engines.dsh` 是 **0.2.2-alpha.2** 才引入的。
+> 0.1.x / 0.2.0 / 0.2.1 的 `dsh-app-boot` 里 `grep -c engines.dsh` = **0**，那些版本不看这个字段。
+> 所以「低于下界会被拒装」这句话只在新版本安装器上成立；老版本上它只是一条声明。
+> 这不是缺陷——老版本本来就能跑。
+
+护栏（三处，别绕过）：
+
+| 护栏 | 位置 | 拦什么 |
+|---|---|---|
+| T2.7–T2.10 | `tools/regression.mjs` | 上界区间、caret 区间、任何 `@deepseek-ai/dsh*` peer 声明 |
+| S8.5 | `tools/scenarios.mjs` | `engines.dsh` 缺失，或与 `dsh.compatibility.dsh` 不同值 |
+| S8.6 | `tools/scenarios.mjs` | `engines.dsh` 出现上界（`<` / `<=`） |
+
+详见 [NORM-COMPLIANCE.md](./NORM-COMPLIANCE.md) §2.5 与 [README](./README.md) 的「版本策略」。
 
 ## 实现要点与取证
 

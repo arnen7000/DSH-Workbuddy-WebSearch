@@ -20,9 +20,12 @@
 ## 检查清单（务必逐条确认）
 
 - [ ] **我先加了会在旧代码上 FAIL 的 check**（复现问题），再改代码
-      —— 正常路径放 `tools/regression.mjs`，异常路径放 `tools/scenarios.mjs`
-- [ ] `node tools/regression.mjs "<已安装插件目录>"` 全绿（T1–T10）
-- [ ] `node tools/scenarios.mjs "<插件目录>"` 全绿（S1–S9）
+      —— 正常路径放 `tools/regression.mjs`，异常路径放 `tools/scenarios.mjs`，
+      用户可见的使用顺序放 `tools/user-journey.mjs`
+- [ ] `node tools/regression.mjs "<已安装插件目录>"` 全绿（T1–T14）
+- [ ] `node tools/scenarios.mjs "<插件目录>"` 全绿（S1–S10）
+- [ ] `node tools/user-journey.mjs "<插件目录>"` 全绿（A–J）
+- [ ] `node tools/check-links.mjs "$PWD"` 全绿（L1–L4：相对链接 / 锚点 / §交叉引用 / README 目录）
 - [ ] 未把 `accessToken` 写进日志/错误信息/快照（红线，`S2.2` 会拦）
 - [ ] 未新增 `registerFetchProvider`（红线，`S7.2` 会拦）
 - [ ] `cordis.patch.yml` 仍复述 `fetchProvider: http`（红线，`S7.3` 会拦）
@@ -35,8 +38,10 @@
 <!-- 你实际怎么验证的？贴命令与关键输出（记得脱敏）。 -->
 
 ```bash
-node tools/regression.mjs "<已安装插件目录>"
-node tools/scenarios.mjs  "<插件目录>"
+node tools/regression.mjs   "<已安装插件目录>"
+node tools/scenarios.mjs    "<插件目录>"
+node tools/user-journey.mjs "<插件目录>"
+node tools/check-links.mjs  "$PWD"
 ```
 
 ## 风险 / 兼容性影响

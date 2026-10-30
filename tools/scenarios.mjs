@@ -916,11 +916,11 @@ console.log("\nS7  接管范围：只接管搜索，不接管抓取（最易误�
   check("S8.1", "TESTING.md 存在（测试体系有落点）", testing !== undefined, testing ? "" : "缺失：下次修 bug 又要重新想测什么");
 
   // S8.2 测试文档必须引用每一层套件（只提一层说明覆盖有缺口）
-  const docSuites = ["tools/regression.mjs", "tools/scenarios.mjs", "tools/user-journey.mjs"];
+  const docSuites = ["tools/regression.mjs", "tools/scenarios.mjs", "tools/user-journey.mjs", "tools/check-links.mjs"];
   const docMissing = docSuites.filter((s) => !(testing && testing.includes(s)));
   check(
     "S8.2",
-    "TESTING.md 引用了全部三层套件（regression / scenarios / user-journey）",
+    "TESTING.md 引用了全部套件（regression / scenarios / user-journey / check-links）",
     docMissing.length === 0,
     testing ? (docMissing.length ? `缺少引用：${docMissing.join(", ")}` : "") : "（跳过：无 TESTING.md）",
   );
@@ -936,17 +936,50 @@ console.log("\nS7  接管范围：只接管搜索，不接管抓取（最易误�
   const isRepoDir = fs.existsSync(join(targetDir, ".git")) || fs.existsSync(join(targetDir, ".github"));
   if (isRepoDir) {
     const ci = fs.existsSync(ciPath) ? fs.readFileSync(ciPath, "utf8") : "";
-    const ciSuites = ["scenarios.mjs", "user-journey.mjs"];
+    const ciSuites = ["scenarios.mjs", "user-journey.mjs", "check-links.mjs"];
     const ciMissing = ciSuites.filter((s) => !ci.includes(s));
     check(
       "S8.4",
-      "CI 已接线 scenarios / user-journey 套件（否则用例形同虚设）",
+      "CI 已接线 scenarios / user-journey / check-links 套件（否则用例形同虚设）",
       ciMissing.length === 0,
       ci ? (ciMissing.length ? `CI 未跑：${ciMissing.join(", ")}` : "") : "（CI 文件不存在）",
     );
   } else {
     check("S8.4", "非仓库目录（npm 包内无 .github/），跳过 CI 接线检查", true, "");
   }
+
+  // S8.5 dsh 真正读的是 `engines.dsh`，不是 `dsh.compatibility`。
+  //      实测（dsh 0.2.2-alpha.2 的 evaluatePluginCompatibility）：只写
+  //      `dsh.compatibility.dsh` 时，任何版本都放行——包括 `ctx.web` 接缝尚不存在的
+  //      0.1.4；写上 `engines.dsh` 才会真的拒绝并给出 `dsh plugin allow-version` 补救。
+  //      所以两者必须同时存在且取同一个下界，否则「声明」与「执行」脱节。
+  const pkgPath = join(targetDir, "package.json");
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+  } catch {
+    manifest = undefined;
+  }
+  const declaredFloor = manifest?.dsh?.compatibility?.dsh;
+  const enforcedFloor = manifest?.engines?.dsh;
+  check(
+    "S8.5",
+    "engines.dsh（dsh 实际执行的闸门）存在，且与 dsh.compatibility.dsh 同值",
+    Boolean(enforcedFloor) && enforcedFloor === declaredFloor,
+    manifest
+      ? `engines.dsh=${JSON.stringify(enforcedFloor)} / dsh.compatibility.dsh=${JSON.stringify(declaredFloor)}`
+      : "（package.json 不可读）",
+  );
+
+  // S8.6 闸门不得设上限：dsh 出新版本必须照样能装（只声明「已验证到哪」）。
+  //      写成 `>=0.1.5-rc.2 <0.3.0` 之类会在升级后把用户挡在门外，且无法自救。
+  const hasUpperBound = typeof enforcedFloor === "string" && /<[=]?/.test(enforcedFloor);
+  check(
+    "S8.6",
+    "engines.dsh 不设版本上限（允许未来版本直接安装）",
+    typeof enforcedFloor === "string" && enforcedFloor.startsWith(">=") && !hasUpperBound,
+    JSON.stringify(enforcedFloor),
+  );
 }
 
 // ───────────────────────── S10 维护者脚本（发布 / 上架） ─────────────────────────
