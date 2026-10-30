@@ -292,7 +292,7 @@ node tools/check-github-meta.mjs "$PWD"
 | 事项 | 结果 |
 |---|---|
 | 替换仓库 URL 占位符 | ✅ `package.json`（3 处）、`DEVELOPING.md`（2 处）、`.github/ISSUE_TEMPLATE/config.yml`（3 条 contact_links）、`bug_report.yml`（1 条链接）→ 全部指向 `github.com/arnen7000/dsh-workbuddy-websearch` |
-| 填写联系邮箱 | ✅ `SECURITY.md` + `CODE_OF_CONDUCT.md` → `arnen@126.com` |
+| 私密联系渠道 | ✅ 仓库已开启 **private vulnerability reporting**；`SECURITY.md` 与 `CODE_OF_CONDUCT.md` 均指向它，**不再公开邮箱**（避免被爬取，也少一处个人信息） |
 | **清除本机信息** | ✅ 见下 |
 | 自检 | ✅ `node tools/check-github-meta.mjs "$PWD"` → 40 PASS / 0 FAIL / 0 WARN |
 | 推送 | ⏳ 见下（远端仓库名为 `arnen7000/DSH-Workbuddy-WebSearch`；GitHub 的仓库地址大小写不敏感，两种写法都能解析到同一仓库，但 `package.json` 必须写规范大小写——见 §6.1） |

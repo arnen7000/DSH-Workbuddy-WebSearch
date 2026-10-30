@@ -319,8 +319,10 @@ console.log(`\nG8  本机信息泄露检查（本仓库对外发布，任何文�
     },
     {
       id: "G8.5",
-      re: /\barnen\b(?!@)/g,
-      label: "无本机用户名（只允许 arnen7000 / arnen@126.com）",
+      // 只放行 GitHub 账号本身（arnen7000）。个人邮箱、单独的用户名一律算本机信息 ——
+      // 联系方式统一走仓库的 private vulnerability reporting，不再往公开仓库写邮箱。
+      re: /\barnen(?!7000)/g,
+      label: "无本机用户名与个人邮箱（只允许 GitHub 账号 arnen7000）",
     },
     {
       id: "G8.6",

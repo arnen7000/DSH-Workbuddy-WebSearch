@@ -235,6 +235,12 @@ node "<本插件目录>/tools/ensure-installed.mjs" "<你的 DSH_HOME>" web
 | S8.5 | `tools/scenarios.mjs` | `engines.dsh` 缺失，或与 `dsh.compatibility.dsh` 不同值 |
 | S8.6 | `tools/scenarios.mjs` | `engines.dsh` 出现上界（`<` / `<=`） |
 
+**什么时候必须 bump**：`lib/`、`cordis.patch.yml`、`package.json` 里任何字段变了 → 必须 bump
+（否则 pnpm 复用缓存，用户装到的还是旧代码）。
+**什么时候不用 bump**：只改了文档（哪怕该文档在 `files` 里、会随包发布）→ 不 bump，
+让它搭下一次功能性发版的车。理由：bump 的目的是「让用户真的拿到新代码」，
+而文档不影响任何行为；为一行文字发一版只会制造版本噪音。
+
 详见 [NORM-COMPLIANCE.md](./NORM-COMPLIANCE.md) §2.5 与 [README](./README.md) 的「版本策略」。
 
 ## 实现要点与取证
