@@ -80,7 +80,7 @@ back as a summary with cited sources.
   只接管 `web_search`；`web_fetch` 仍走内置（bundle patch 里重申 `fetchProvider: http`）。
 - Test suite in the repo: 183 contract + 68 scenario/edge-case + 40 metadata checks, all
   green. Every new guard is verified by mutation testing, so it cannot be vacuously true.
-  仓库自带测试：183 条契约 + 68 条场景/异常 + 40 条元信息检查，全绿；每条新护栏都做过
+  仓库自带测试：182 条契约 + 70 条场景/异常 + 42 条用户旅程 + 40 条元信息 + 3 条文档链接，全绿；每条新护栏都做过
   变异测试，确保不是恒真。
 
 ## Checklist / 自查清单
