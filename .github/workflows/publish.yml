@@ -25,7 +25,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # registry-url 必须指向官方 registry（可信发布只支持 registry.npmjs.org）。
       # 刻意不开缓存：发布构建要的是可复现，不是快。
