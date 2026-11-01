@@ -29,7 +29,7 @@ jobs:
 
       # registry-url 必须指向官方 registry（可信发布只支持 registry.npmjs.org）。
       # 刻意不开缓存：发布构建要的是可复现，不是快。
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
